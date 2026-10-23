@@ -1,0 +1,22 @@
+---
+title: "Introduction"
+description: "The endpoints your game server calls, and the callbacks BluMint calls on it."
+---
+
+This reference lists the endpoints and callbacks of the integration that lets your players go from one tournament match to the next without anyone opening a lobby or typing in a score. It uses the words the [guide](/index#words) defines, and [The tournament lifecycle](/tournament-lifecycle) walks through the same calls in the order a tournament makes them.
+
+## Authentication {#authentication}
+
+Send your BluMint API key as the `X-Api-Key` header on every call. You get one key for each environment, and each is bound to your game, so a key works only for your game and only on its own environment ([Before you start](/before-you-start)).
+
+## Servers {#servers}
+
+The reference lists two servers, staging first. Build and test on staging, and switch to production once your integration works there. Each server address ends in `/api`, so a path shown here as `/tournaments/match/submit` is `/api/tournaments/match/submit` on the environment you call.
+
+## Callbacks {#callbacks}
+
+Each registration endpoint, such as `setCreate`, lists the callback BluMint then calls on your game server, with its request and its answers. The decision table for what each answer does is on the guide page each registration links to.
+
+## Try it {#try-it}
+
+Use your staging key in Try it, never your production key. Try it requests pass through Mintlify, and a registration call you make there replaces the URL BluMint calls for your game on that environment.

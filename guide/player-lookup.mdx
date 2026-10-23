@@ -1,0 +1,46 @@
+---
+title: "Player lookup"
+description: "How BluMint asks your server for your own player id, and what each answer does to a player."
+---
+
+import LookupRequest from "/snippets/contract/examples/lookup.request.mdx";
+import LookupAnswer from "/snippets/contract/examples/lookup.answer.mdx";
+import LookupAnswers from "/snippets/generated/answers/lookup.mdx";
+
+## Player lookup {#player-lookup}
+
+If BluMint identifies your players by your own player ids, your lookup URL is required. Register it before your game's first tournament opens: a player can register for one of your game's tournaments only after your lookup finds them, so until the URL is registered no one can. An integration identifies its players one way only, so once you choose your own player ids, every create identifies every player by the id your lookup answered, never by a linked account. The full lookup schemas are in the [API reference](/api-reference/introduction), in the callbacks of the `setLookupPlayer` endpoint.
+
+BluMint sends one lookup per player. The body has one key for each authentication method you chose in the setup form that the player has linked on BluMint and that BluMint looks players up by (today `discord`, `epic`, `twitch` or `lichess`, with more as BluMint adds them), holding that account's id, plus your secret if you send it in the body. BluMint doesn't call your lookup for a player who has linked none of them, and asks that player to link one instead. It never calls your lookup for a spectator:
+
+<LookupRequest />
+
+Answer each key with a one-entry array holding your player id for that account, a non-empty string of at most {/* contract-constant MAX_PARTNER_PLAYER_ID_LENGTH */}256 printable characters, or `[]` when you don't know the player:
+
+<LookupAnswer />
+
+If two keys lead to different players of yours, BluMint can't tell which one is playing, so it treats the answer as broken and the lookup fails.
+
+When your lookup doesn't find a player, BluMint links them to the connect page you gave in the setup form, an https page where a player connects the account they linked on BluMint to your game. BluMint asks them to approve that same account there, then check again:
+
+<Frame caption="What your players see on BluMint when your lookup doesn't find them, and their check again once they approve">
+  <video autoPlay muted loop playsInline aria-label="A player presses Join on BluMint, the Approve your Discord account for Ember dialog opens with Open Ember and Check again, and Check again registers them" poster="/images/shared/connect-account.png" src="/images/shared/connect-account.mp4"></video>
+</Frame>
+
+### Which lookup answer to send when {#lookup-answers}
+
+<LookupAnswers />
+
+BluMint reads only the status of a failed lookup, so the body of a `400` or `500` can be anything. Any other answer counts like the `400` row, including a `200` whose body breaks the rules above, except another `5xx`, which counts like the `500` row.
+
+- **An unknown player.** Answer `200` with `[]` or `[null]` for that key, or leave the key out. All three mean the same thing. Never answer `404`: BluMint counts it like the `400` row, so the player can't register and a match being set up goes to the host, instead of the player being asked to approve their account for your game.
+- **A brief outage.** While you are briefly down or overloaded, answer `503` or another status on the down-or-overloaded row, never `500` or `400`, which BluMint doesn't retry, so a match being set up goes to the host at once.
+
+### Timing {#lookup-timing}
+
+- When a player registers, BluMint waits {/* contract-constant REGISTRATION_LOOKUP_TIMEOUT_MS */}3 seconds for your answer and sends the lookup once, because the player is waiting. Answer in well under that, or the player is told you aren't responding.
+- Before each create, BluMint looks up every player in the match again and waits up to {/* contract-constant CREATE_LOOKUP_TIMEOUT_MS */}10 seconds for each. It sends each lookup once per try of the create, and a lookup outage makes BluMint try the whole create again, lookups included, as an outage on your create does.
+
+### Bursts {#lookup-bursts}
+
+BluMint looks up every player of a match just before its create, and sends one create per match of a round at the same moment, so a 256-team single-elimination tournament with one player per team sends about 256 lookups together, and tournaments of your game that start together add to that. BluMint applies no limit on how many it sends at once. Accept that burst rather than answering `429`.

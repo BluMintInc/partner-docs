@@ -1,0 +1,208 @@
+---
+title: "Create a lobby"
+description: "What BluMint sends your create-lobby URL when a match is ready, how to answer it, and what each answer does."
+---
+
+import CreateBody from "/snippets/contract/examples/create.body.mdx";
+import CreateAnswer from "/snippets/contract/examples/create.answer.mdx";
+import CreatePlayerUnlinked from "/snippets/contract/examples/create.playerUnlinked.mdx";
+import CreateBusy from "/snippets/contract/examples/create.busy.mdx";
+import CreateAnswers from "/snippets/generated/answers/create.mdx";
+
+## Create a lobby {#create-a-match}
+
+When a match is ready to play, BluMint POSTs your create-lobby URL. On a best-of series, BluMint sends one create per match, and on single game sessions, one create per game session. Either way, each create carries an `Idempotency-Key` header that identifies it ([Idempotency](#idempotency)):
+
+```http
+POST <your createMatchUrl>
+Content-Type: application/json
+Idempotency-Key: <a key BluMint chooses>
+<your secret, as you registered it>
+```
+
+The body lists each team and, for each player, one or more identities. Every identity in a create has the same form, which depends on how BluMint identifies your players.
+
+**By your own player ids.** Each player carries exactly one identity, `{ "inGameId": "emb1_example" }`, holding the id your lookup answered ([Player lookup](/guide/player-lookup)).
+
+**By authentication methods both BluMint and your game share.** Each player carries one identity for each authentication method you chose in the setup form that they have linked, `{ "provider": "discord", "inGameId": "274220342558756145" }`. A player can carry more than one identity: admit them if any one matches, and identify them in a report by any one of them.
+
+You receive only one of the two forms, so you never need to tell them apart. A create on a Discord integration looks like this:
+
+<CreateBody />
+
+- `teams` lists every team in the match, within the range of teams per match you gave in the setup form, which is exactly two on a best-of series. Admit only the players it identifies.
+- `series` is present on every best-of series create, and `gamesToWin` is the number of game sessions a team must win to take the match. It is absent on single game sessions.
+- On a best-of series, `startingWins` is on every team when BluMint asks you for a new lobby for a match already under way: after you abort with `retryable: true`, and after the host resets the match. It is the number of game sessions of this match BluMint has already recorded for that team, and `0` after a reset. It is absent on the first create for a match, including BluMint's retries of it, and on single game sessions. Honor it: count it into every progress report, result and abort for the new lobby. A report that gives a team fewer wins than its `startingWins` answers `400 invalid_wins`.
+- `spectators` lists the tournament's host, streamers and moderators who chose to watch, at most {/* contract-constant MAX_MATCH_CREATION_SPECTATORS */}16, each by the same kind of identity a player carries. It never lists a player in the match or anyone registered in the tournament. It is always present and may be empty, and it can list more spectators than your lobby admits. If your game supports watching, admit listed identities as spectators, in list order, until your lobby holds as many as it admits; a spectator can never play or report a result. Otherwise ignore it. Never refuse a create because of its spectators.
+- `matchSettings` carries the settings the host chose for this match ([Match settings](#match-settings)).
+- `readyWithinSeconds` is the tournament's hold length in seconds, always present ([Which answer to send when](#create-answers) gives its range). BluMint tells every player to be ready this long after their match starts, or be disqualified, and BluMint times that itself. If your game ends a lobby on its own when a player doesn't show up, let that happen no earlier than this after you answer the create. Otherwise ignore it. The host can lengthen the hold while a match waits, so a repeat of one `Idempotency-Key` can carry a larger value: leave it out when you compare a repeat's body.
+- Ignore any field you don't recognize in a body BluMint sends you. BluMint can add a field you may ignore at any time, so a server that refuses an unknown field stops working when one is added.
+
+### Keep every value in the type the contract gives {#value-types}
+
+Keep each value in the JSON type this guide and the [API reference](/api-reference/introduction) give it, in your storage as much as on the wire, and send it back in that type. Every `inGameId` is a string, so store it as a string and send it as one in every report: an id sent as a number is refused with `invalid_request`. A string id that happens to hold digits shows why this matters. A Discord id is longer than a JSON number can hold exactly, so an id parsed into a number comes back as a different id, and BluMint can no longer tell which player you mean.
+
+### Match settings {#match-settings}
+
+Match settings let a host run the tournament they have in mind, rather than only your default match. `matchSettings` passes the host's choices to you unchanged on every create, so hosts can run fun, custom events of your game: a tournament on one map, a most-kills-wins night, a short time limit for a fast bracket, or whatever rules make their community show up.
+
+- **You define the settings.** In the setup form, list the settings of your game a host should be able to configure for a match, and link the API or JSON spec that defines them if you have one ([Before you start](/before-you-start)). The keys in `matchSettings` are the ones you list, with the values the host chose.
+- **Apply what the host chose.** Set up the lobby with each setting the create carries. An empty object is valid and means the host chose none, so use your defaults.
+- **Refuse a setting you can't run.** Answer `400 match_unsupported`, and the host starts the match manually ([Which answer to send when](#create-answers)).
+
+For example, BluMint's Lichess integration reads `{ "clock": { "limitSeconds": 180, "incrementSeconds": 2 } }` as a three-minute game with a two-second increment, so a host can run a blitz tournament as easily as a classical one.
+
+### Answer the create {#create-answer}
+
+Answer `200` with your lobby's id, `matchId`, and one of three ways for players to get in. Your integration uses the one you declared in the setup form:
+
+1. **A join link, `matchUrl`.** Players open the link to join. It is https, carries no `user:pass@`, is at most {/* contract-constant MAX_URL_LENGTH */}2048 characters, and its hostname is exactly one of the join-link hostnames you gave BluMint. It can open a page on your site or your game client directly. A lobby code in the fragment after `#` is fine, since BluMint sends the link byte for byte.
+2. **A lobby code, `lobbyCode`.** Players type the code into your game. It is 1 to {/* contract-constant MAX_LOBBY_CODE_LENGTH */}32 characters using only ASCII letters, digits, spaces, `_`, `*`, `.`, the backtick and `-`. Because BluMint shows the code in chat, it must not be wrapped in `*`, `_` or backticks, and must not contain a link or an email address.
+3. **Neither, because your own game client puts players into the lobby.** Send no `matchUrl` or `lobbyCode`. Send `spectateUrl` instead: an https watch link on one of the watch-link hostnames you gave BluMint, which BluMint offers to the host so they can follow the match.
+
+An answer for an integration whose players join by a link:
+
+<CreateAnswer />
+
+- `matchId` is your lobby's id, 1 to {/* contract-constant MAX_PARTNER_MATCH_ID_LENGTH */}256 characters of well-formed Unicode, with no unpaired UTF-16 surrogate. BluMint treats it as opaque and sends it back unchanged.
+- An answer that breaks these rules, or carries a way in your integration did not declare, fails the create for good.
+
+### Who gets the way in {#who-gets-the-way-in}
+
+BluMint tells every player the create identifies in `teams` that their match is ready, by push notification and in the app:
+
+<Frame caption="The push notification your players get when you answer with a join link">
+  <img
+    src="/images/shared/match-ready-push.png"
+    alt="iPhone lock screen showing BluMint's Your lobby's open notification: your Ember match with georgebush for the Friday Night Cup event is ready"
+    width="320"
+  />
+</Frame>
+
+<Frame caption="The same notice in BluMint's notification panel, when you answer with a lobby code">
+  <img
+    src="/images/create-a-lobby/lobby-code-match-ready.png"
+    alt="BluMint's notification panel showing Your lobby's open, with the lobby code to enter for the Friday Night Cup match and View match and Copy code buttons"
+  />
+</Frame>
+
+With a join link or a lobby code, BluMint sends your `matchUrl` or `lobbyCode` unchanged to those players, on their match card:
+
+<Frame caption="A player's match card on BluMint as your join link arrives, one press from your lobby">
+  <video autoPlay muted loop playsInline aria-label="A player's Current match card on BluMint reading Setting up, then turning live with an Open in Ember button" poster="/images/shared/match-card-open-in-ember.png" src="/images/create-a-lobby/match-card-join-link.mp4"></video>
+</Frame>
+
+<Frame caption="A player's match card on BluMint, showing your lobby code to copy">
+  <img
+    src="/images/create-a-lobby/lobby-code-match-card.png"
+    alt="A player's Current match card on BluMint, live, with the lobby code and a copy button at its top right"
+  />
+</Frame>
+
+Let only those players play. Anyone else who has the link or code must not, because a player could otherwise pass it to a friend who joins their team to help them win.
+
+When your own game client puts players into their lobbies, BluMint sends players nothing to open and offers your `spectateUrl` only to the host:
+
+<Frame caption="What the tournament's host sees on BluMint, opening your watch link">
+  <img
+    src="/images/create-a-lobby/host-spectate.png"
+    alt="The host's Current match card on BluMint, live, with an Open in Ember press at its top right and the note that Ember scores this match"
+  />
+</Frame>
+
+Anyone viewing the tournament can still read that link, so it must only let its holder watch. It must never let them play, control the match, or get the access you give the spectators listed in `spectators`.
+
+### Which answer to send when {#create-answers}
+
+While BluMint waits on your server or on a player, it holds the match and retries every {/* contract-constant PARTNER_CREATE_HOLD_RETRY_MS */}60 seconds for the tournament's hold length, which the host sets between {/* contract-constant MIN_PARTNER_CREATE_HOLD_MINUTES */}5 and {/* contract-constant MAX_PARTNER_CREATE_HOLD_MINUTES */}30 minutes ({/* contract-constant DEFAULT_PARTNER_CREATE_HOLD_MINUTES */}10 by default). What happens when the hold runs out depends on what BluMint was waiting for:
+
+- **A player**, such as one you answered `player_busy` or `player_unlinked` for: that player is disqualified, since fixing it was theirs to do.
+- **Your server**, after outage answers: nobody is disqualified, and the host takes the match and sets it up manually.
+
+While BluMint waits on your server, it tells the match's players so:
+
+<Frame caption="The push notification your players get while your server isn't answering">
+  <img
+    src="/images/create-a-lobby/partner-unavailable-push.png"
+    alt="iPhone lock screen showing BluMint's Setting up in Ember notification: Ember isn't responding, and the link arrives as soon as it's back"
+    width="320"
+  />
+</Frame>
+
+An outage answer is one on the down-or-overloaded row below, which includes no answer within {/* contract-constant MATCH_CREATION_TIMEOUT_MS */}40 seconds and a dropped or refused connection. When your outage answer carries `Retry-After`, in seconds or as an HTTP date, BluMint waits at least that long before it sends again, up to {/* contract-constant PARTNER_RETRY_AFTER_MAX_MS */}5 minutes. A wait reaching past the end of the hold is cut short, so BluMint still sends one last create before the host takes the match.
+
+<CreateAnswers />
+
+`match_unsupported`, `invalid_request`, `idempotency_key_reused`, a `500` and any answer this table does not list are final: BluMint stops, and the host starts the match manually. BluMint reads a `500` as your code failing on this request, which sending it again would only repeat. When a problem will clear on its own, such as a deploy, a restart or a full queue, answer `503`, not `500`.
+
+- Send `player_unlinked` for any player you can't match to one of yours, listing in `players` every id from the request you don't recognize. When you identify players by one kind of linked account, the player can replace that account with another in the app, and the next retry identifies them by the new one.
+- With a close URL registered, BluMint waits for your `200` to each lobby's close before it asks you for a new lobby for any of its players, so a create never identifies a player who is still in one of your lobbies ([Close a lobby](/guide/close-a-lobby)). If one arrives anyway, for example because you registered no close URL or because of a close BluMint gave up on, answer `423 player_busy`, listing in `players` every id from the request that another of your lobbies holds. Never answer a busy player with a `5xx`, which BluMint reads as your server being down.
+- Treat a refused create as if it never happened. When you answer `player_unlinked` or `player_busy`, create nothing and don't mark the `Idempotency-Key` as used. Handle each retry under that key, possibly with corrected player ids, like a first request.
+
+A refusal carries only `code` and, where the table names it, `players`. BluMint ignores any other text you add:
+
+<CreatePlayerUnlinked />
+
+<CreateBusy />
+
+BluMint then tells each named player what to do:
+
+<Frame caption="The push notification a player gets when you don't recognize the account they linked on BluMint, here on BluMint's Lichess integration">
+  <img
+    src="/images/create-a-lobby/linked-account-unrecognized-push.png"
+    alt="iPhone lock screen showing BluMint's Lichess account not recognized notification, asking the player to replace the account they linked"
+    width="320"
+  />
+</Frame>
+
+<Frame caption="The push notification a player gets while another of your lobbies holds them">
+  <img
+    src="/images/create-a-lobby/player-busy-push.png"
+    alt="iPhone lock screen showing BluMint's Finish your other match notification, asking the player to finish or leave their other Ember match"
+    width="320"
+  />
+</Frame>
+
+### Timing {#timing}
+
+Answer every create within {/* contract-constant PARTNER_CREATE_ANSWER_BUDGET_MS */}30 seconds. BluMint waits {/* contract-constant MATCH_CREATION_TIMEOUT_MS */}40 seconds for each request, counted on the wall clock from the start of the request and including DNS lookup and connection time. A request with no answer by then, or whose DNS lookup fails for a moment (`EAI_AGAIN`), is an outage answer, and BluMint sends it again under the same key.
+
+Players are waiting on the match while your server creates its lobby, so BluMint stops waiting on one request after {/* contract-constant MATCH_CREATION_TIMEOUT_MS */}40 seconds and holds the match instead, rather than let one stuck request hold up the players. The {/* contract-constant PARTNER_CREATE_ANSWER_MARGIN_MS */}10 seconds between your {/* contract-constant PARTNER_CREATE_ANSWER_BUDGET_MS */}30 and BluMint's {/* contract-constant MATCH_CREATION_TIMEOUT_MS */}40 cover the network, so an answer you send in time is never mistaken for an outage, and by the time BluMint sends the request again, your work on the first one has finished rather than still running beside the repeat.
+
+If a request arrives for a key you are still creating a lobby for, answer with that lobby once it exists, or answer `503` so BluMint sends the same key again. Never answer `409` here: BluMint treats `409` as final and closes the lobby your first request is still creating.
+
+### Idempotency {#idempotency}
+
+BluMint can send you the same create more than once. An answer can be lost on the network or arrive after BluMint's deadline, and BluMint retries a create through an outage or a hold. When an answer is lost, BluMint can't tell whether you made the lobby, so it sends the request again. If your server made a new lobby for every request, one match could end up with two lobbies, and its players could split between them. The `Idempotency-Key` header tells you which requests are the same create.
+
+A repeated create carrying the same `Idempotency-Key` must return the same lobby, on a best-of series and on single game sessions alike. The key is at most {/* contract-constant MAX_PARTNER_IDEMPOTENCY_KEY_LENGTH */}128 characters of ASCII letters, digits and `-`, matching {/* contract-constant PARTNER_IDEMPOTENCY_KEY_PATTERN */}`^[A-Za-z0-9-]{1,128}$`, so it always fits as a `matchId`. BluMint builds it from its own ids, so treat it as opaque and never parse it.
+
+BluMint closes a lobby by its key ([Close a lobby](/guide/close-a-lobby)), and every report you send names it ([Report what happened](/guide/report-what-happened)), so keep each key for as long as you keep the lobby it made. A key whose create made no lobby, such as one a close named first, needs keeping only for at least {/* contract-constant MIN_PARTNER_IDEMPOTENCY_KEY_RETENTION_HOURS */}3 hours, the longest BluMint can go on sending that key's create and its close, so a close can mark it closed and a later create under it answers `409 idempotency_key_reused`. Honor the key one of two ways:
+
+1. Store the key with the lobby, and answer a repeat with the stored lobby.
+2. Derive your `matchId` from the key, the key itself or a UUIDv5 of it, so your own uniqueness on lobby ids finds the existing lobby on a repeat, with no extra table. The key then lives exactly as long as its lobby, which meets both rules above.
+
+- BluMint sends a new key each time it needs a new lobby from you: after you abort with `retryable: true`, after the host resets the match, and after the host undoes the start of the tournament and starts it again. On single game sessions, each game session also has its own key. A `matchId` you derive from the key is therefore new each time, so you never return a lobby that has already ended.
+- Every other repeat carries the same key, whether it is one of BluMint's retries or an occasional duplicate of the same request. Answer each one with the same lobby.
+- Two requests with one key can arrive at the same moment. Serialize on the key, for example with a unique reservation row, so one key yields one lobby. A close takes the same reservation as a create: a close that finds a create under its key still building records the key closed and answers `200`, and before that create commits its lobby, it re-reads the mark under the reservation, tears down what it built and answers `409 idempotency_key_reused`, which BluMint expects for a match it moved past.
+
+### Bursts {#bursts}
+
+When a round starts, BluMint sends the creates for all of its matches at the same moment, one per match in the round. Tournaments of your game that start together add to that, and BluMint does not limit how many creates it sends at once. A 256-team single-elimination tournament, for example, sends about 128 creates at once. Handle the burst instead of answering `429`: BluMint reads a `429` as an outage answer and holds the match, as the table's outage row says.
+
+### When a create fails {#when-a-create-fails}
+
+When a create fails, the host starts the match manually, and BluMint tells them so:
+
+<Frame caption="The push notification the tournament's host gets when a create fails">
+  <img
+    src="/images/create-a-lobby/host-take-over-push.png"
+    alt="iPhone lock screen showing BluMint's Start this match manually notification: automatic setup failed for donaldtrump vs georgebush"
+    width="320"
+  />
+</Frame>
+
+What BluMint does about a lobby on your side depends on how you answered:
+
+- After `match_unsupported`, `invalid_request` or `player_unlinked`, BluMint assumes you made no lobby under the key and never sends a close for it. Check the request before you create anything.
+- After a `500`, `idempotency_key_reused`, an answer the table does not list, a `200` that breaks the rules above, or an outage answer to BluMint's last try, you may hold a lobby no player will ever join. If you registered a close URL, BluMint closes that lobby by its key ([Close a lobby](/guide/close-a-lobby)). If you did not, expire any lobby that none of its players joins within a time you choose. A later report on such a `matchId` answers `unknown_match`, or `match_closed` if BluMint recorded the lobby before moving past it.
