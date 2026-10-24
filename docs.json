@@ -3,7 +3,7 @@
   "name": "BluMint game partner docs",
   "theme": "sequoia",
   "colors": { "primary": "#0066cc", "light": "#33ccff", "dark": "#0066cc" },
-  "logo": { "light": "/logo/light.svg", "dark": "/logo/dark.svg", "href": "https://docs.blumint.com" },
+  "logo": { "light": "/logo/light.svg", "dark": "/logo/dark.svg", "href": "https://docs-staging.blumint.com" },
   "favicon": "/favicon.svg",
   "appearance": { "default": "system" },
   "navbar": {
@@ -45,5 +45,11 @@
     { "source": "/guide/common-pitfalls", "destination": "/guide/report-what-happened" }
   ],
   "contextual": { "options": ["copy", "view", "download-spec", "claude", "chatgpt"] },
-  "seo": { "metatags": { "canonical": "https://docs.blumint.com" } }
+  "seo": {
+    "metatags": {
+      "canonical": "https://docs.blumint.com",
+      "og:image": "https://docs-staging.blumint.com/social-card.png",
+      "twitter:image": "https://docs-staging.blumint.com/social-card.png"
+    }
+  }
 }

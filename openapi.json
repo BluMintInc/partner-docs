@@ -3,7 +3,7 @@
   "info": {
     "title": "BluMint game partner API",
     "version": "2.0.0",
-    "description": "Reference for the endpoints your game uses to run BluMint tournaments. For the walkthrough, see the [game integration guide](https://docs.blumint.com). To request an API key, fill in the [game partner setup form](https://staging.blumint.io/contact/game-partner), and for a question, [contact BluMint](https://staging.blumint.io/contact).",
+    "description": "Reference for the endpoints your game uses to run BluMint tournaments. For the walkthrough, see the [game integration guide](https://docs-staging.blumint.com). To request an API key, fill in the [game partner setup form](https://staging.blumint.io/contact/game-partner), and for a question, [contact BluMint](https://staging.blumint.io/contact).",
     "license": {
       "name": "Apache 2.0",
       "url": "http://www.apache.org/licenses/LICENSE-2.0.html"
