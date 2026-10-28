@@ -1,0 +1,4 @@
+- `decided`: the BluMint match, or a game session of it, got a result without you, for example because the host entered a score.
+- `replaced`: something other than the host's take over replaced the lobby you made. BluMint handed the match to the host, because your create failed for good after you may have made a lobby ([When a create fails](/guide/create-a-lobby#when-a-create-fails)) or its hold ran out, and the host then set it up; the host set it up while your create was still on its way; the host reset its score; a player change re-seated it; or it is a second lobby you made under one `Idempotency-Key`.
+- `removed`: the BluMint match was deleted, for example because the host undid the start of the tournament.
+- `hostOverride`: the host pressed take over on a match you were running or setting up, to run it manually instead.

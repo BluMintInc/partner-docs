@@ -1,55 +1,24 @@
-# Mintlify Starter Kit
+# BluMint game partner docs
 
-Use the starter kit to get your docs deployed and ready to customize.
+The source of the BluMint game partner docs, served at <https://docs.blumint.com> by [Mintlify](https://mintlify.com).
 
-Click the green **Use this template** button at the top of this repo to copy the Mintlify starter kit. The starter kit contains examples with
+This directory is mirrored to the public repository `BluMintInc/partner-docs` on every release, and the mirror is overwritten each time, so an edit made in the mirror is lost. Edit the docs here instead.
 
-- Guide pages
-- Navigation
-- Customizations
-- API reference pages
-- Use of popular components
+## Preview the site
 
-**[Follow the full quickstart guide](https://starter.mintlify.com/quickstart)**
+Run these from the root of the repository that holds this directory:
 
-## AI-assisted writing
-
-Set up your AI coding tool to work with Mintlify:
-
-```bash
-npx skills add https://mintlify.com/docs
+```sh
+npm run partner-docs:spec
+npm run partner-docs:dev
 ```
 
-This command installs Mintlify's documentation skill for your configured AI tools like Claude Code, Cursor, Windsurf, and others. The skill includes component reference, writing standards, and workflow guidance.
+`partner-docs:spec` writes `openapi.json` from the API route docs and the decision tables in `snippets/generated/answers/` from the answers BluMint acts on, so never edit any of them by hand. The screenshots, videos and lock screens under `images/` are captures of the BluMint app, so replace one by capturing it again, never by editing it. `partner-docs:dev` serves the site at <http://localhost:3333>.
 
-See the [AI tools guides](/ai-tools) for tool-specific setup.
+## Before you commit
 
-## Development
-
-Install the [Mintlify CLI](https://www.npmjs.com/package/mint) to preview your documentation changes locally. To install, use the following command:
-
-```
-npm i -g mint
+```sh
+npm run partner-docs:mint -- format
 ```
 
-Run the following command at the root of your documentation, where your `docs.json` is located:
-
-```
-mint dev
-```
-
-View your local preview at `http://localhost:3000`.
-
-## Publishing changes
-
-Install our GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app) to propagate changes from your repo to your deployment. Changes are deployed to production automatically after pushing to the default branch.
-
-## Need help?
-
-### Troubleshooting
-
-- If your dev environment isn't running: Run `mint update` to ensure you have the most recent version of the CLI.
-- If a page loads as a 404: Make sure you are running in a folder with a valid `docs.json`.
-
-### Resources
-- [Mintlify documentation](https://mintlify.com/docs)
+This puts every page in Mintlify's canonical form, which the Partner Docs check requires.

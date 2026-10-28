@@ -1,0 +1,77 @@
+/*
+ * Decision tables keep each header word and each code value whole, since a
+ * status like "progress" or "match_unsupported" broken across lines reads as
+ * two values. A table wider than the column scrolls sideways in the wrapper
+ * Mintlify already gives it. Element selectors only, since the theme's own
+ * classes change between releases; !important outranks those classes, which
+ * set overflow-wrap: anywhere on the header cells.
+ */
+table th,
+table td code {
+  white-space: nowrap !important;
+  overflow-wrap: normal !important;
+  word-break: normal !important;
+}
+
+/*
+ * An endpoint's description renders in a header block that sets
+ * overflow-wrap: anywhere, which let its tables shrink a column below its
+ * longest word and split "overloaded" mid-word. Cells keep words whole, as
+ * the guide tables do; a table that then outgrows the column scrolls in its
+ * own box, which Mintlify already makes a sideways scroller.
+ */
+#content-area table td {
+  overflow-wrap: normal !important;
+}
+
+/*
+ * An endpoint page's Callbacks row holds the callback expression, such as
+ * "{$request.body#/createMatchUrl}", as one unbreakable token beside
+ * its name in a row that never wraps, so at phone widths the row pushed the
+ * whole page sideways. The name drops below and the expression breaks where
+ * it must. Keyed on Mintlify's content-area id and element selectors only.
+ */
+#content-area details > summary {
+  flex-wrap: wrap;
+}
+
+#content-area details > summary > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/*
+ * The theme gives every table cell a 150px floor, so a five-column decision
+ * table outgrew the content column and its last column, the longest prose,
+ * sat past the edge squeezed to that floor. From tablet width up the floor
+ * goes, so the columns share the content width by their content; on a phone
+ * no layout fits five columns, so the floor and the sideways scroll stay.
+ */
+@media (min-width: 768px) {
+  #content-area table td {
+    min-width: 0 !important;
+  }
+}
+
+/*
+ * The theme fills the navbar's primary button from colors.light in dark
+ * mode, while the site keeps its buttons on colors.dark in both modes, as
+ * docs.json declares, so the cyan stays emphasis only. Keyed on Mintlify's
+ * data-component-name hook, which outlives its utility classes, and read
+ * from the theme's own --primary-dark, so docs.json stays the one source.
+ */
+html.dark a[data-component-name="primary-header-button"] {
+  background-color: rgb(var(--primary-dark)) !important;
+  color: #ffffff !important;
+}
+
+/*
+ * A heading's permalink sits 40px left of the heading, outside the page at
+ * phone and tablet widths, where it can only take keyboard focus off screen.
+ * It shows on hover alone, which those widths do not have.
+ */
+@media (max-width: 1023px) {
+  #content-area a[aria-label="Navigate to header"] {
+    display: none !important;
+  }
+}

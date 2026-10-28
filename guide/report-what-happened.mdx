@@ -1,0 +1,85 @@
+---
+title: "Report what happened"
+description: "The reports your game server sends as a match is played, what each one does, and how BluMint answers."
+---
+
+import SubmitResult from "/snippets/contract/examples/submit.result.mdx";
+import SubmitProgress from "/snippets/contract/examples/submit.progress.mdx";
+import SubmitTermination from "/snippets/contract/examples/submit.termination.mdx";
+import SubmitAbort from "/snippets/contract/examples/submit.abort.mdx";
+import SubmitStatus from "/snippets/contract/examples/submit.status.mdx";
+import ReportAnswers from "/snippets/generated/answers/report.mdx";
+import SubmitRefusals from "/snippets/generated/answers/submit.mdx";
+
+## Report what happened {#report-what-happened}
+
+Send each report as `POST /api/tournaments/match/submit` with your `X-Api-Key` header, naming your lobby's id (`matchId`) as your create answer gave it and, as `idempotencyKey`, the `Idempotency-Key` of the create that made the lobby.
+
+- Send `idempotencyKey` on every report, exactly as the create's `Idempotency-Key` header carried it. A report you send before your create answer reaches BluMint finds no lobby under its `matchId` yet. The key tells BluMint which create it is still recording, so it answers `503 match_not_ready` and your retry lands, whichever players the report identifies.
+- Identify each player as an object, `{ "inGameId": "274220342558756145" }`, and a team by the ids BluMint sent in this lobby's create: BluMint finds each team by matching your ids against those. One id from a team is enough, and BluMint ignores an id it did not send.
+- Send every id as a JSON string, as in the create ([Keep every value in the type the contract gives](/guide/create-a-lobby#value-types)). An id sent as a number is refused with `invalid_request`.
+
+### Which report to send when {#report-answers}
+
+<ReportAnswers />
+
+When a new lobby could succeed, send the `abort` with `retryable: true`, and otherwise with `retryable: false`. BluMint refuses a report this table does not list with `invalid_request`.
+
+### A result {#a-result}
+
+<SubmitResult />
+
+### A progress report {#a-progress-report}
+
+A first-to-3 match after its third game session, at 2 to 1:
+
+<SubmitProgress />
+
+### A termination {#a-termination}
+
+<SubmitTermination />
+
+### Request a new lobby {#request-a-new-lobby}
+
+When a match can't be completed but a new lobby could succeed, for example after your game server failed, send an `abort` with `retryable: true`:
+
+<SubmitAbort />
+
+### Rules {#report-rules}
+
+- On a best-of series, every team in a progress report, result or abort carries `wins`. On single game sessions, every team in a result carries `placement`, and you send no progress reports. No team carries both.
+- `placement` is an integer from 1 that ranks every team, and draws are refused.
+- `wins` is the team's total game sessions won in this match so far, including its `startingWins`, so every report gives the whole match's tally. In a progress report it is the running total after this game session, never this game session's outcome alone. A best-of series server must honor `startingWins` and count it into every progress report, result and abort. A server that cannot chooses single game sessions instead.
+- Send a progress report after each game session that did not decide the match. The game session that decides it is the result, never also a progress report, and a drawn or voided game session sends nothing. A progress report for game sessions BluMint already recorded answers `200` and changes nothing.
+- A result or progress report may carry free-form `stats` on the match, each team and each player. Stats let BluMint show richer data from your game, such as stats on a player's profile, and build deeper integrations with it. They nest at most {/* contract-constant MAX_PARTNER_STATS_DEPTH */}18 levels deep, the stats object itself being the first. Every number is finite, every key is non-empty, at most {/* contract-constant MAX_PARTNER_STATS_KEY_BYTES */}36 bytes in UTF-8 and not of the `__name__` form, and every key and string is well-formed Unicode, with no unpaired UTF-16 surrogate. A report that breaks these answers `400 invalid_request` naming the problem. The whole request body is at most {/* contract-constant PARTNER_SUBMIT_MAX_BODY_BYTES */}208896 bytes, and a body past it answers `413` before BluMint reads it. Any report inside these bounds is stored whole.
+- In a termination, `team` identifies the team whose run in this match ends, by any of its players' ids. Use the reason `fairPlayViolation` when the team broke your fair-play rules and `forfeit` otherwise. Both reasons have the same effect, the one the termination row of [Which report to send when](#report-answers) states. `note` is optional text on what happened, 1 to {/* contract-constant MAX_PARTNER_MATCH_ID_LENGTH */}256 characters, and BluMint stores `reason` and `note` with the report.
+- An abort's reason is `serverFailure` when your server failed, `insufficientPlayers` when too few players stayed connected for the match to go on, or `disputed` when the result is disputed. BluMint stores `reason`, but only `retryable` decides what happens ([Which report to send when](#report-answers)). On a best-of series, the abort carries `teams` with each team's `wins` so far, and on single game sessions it carries none. BluMint closes the `matchId` on any abort, so a later report for it answers `match_closed`.
+- Timing a player who doesn't show up is BluMint's job, not your game's: BluMint tells every player to be ready within `readyWithinSeconds` of their match starting, and times it itself. Abort only when your game itself ends the match without a result.
+
+### Status reports {#status-reports}
+
+Status reports are required. A status report tells BluMint who is in the lobby and ready, so BluMint knows who has joined your lobby. Send one on every presence change:
+
+- when each player arrives or leaves,
+- when a player becomes ready for the next game session, and
+- after each game session, when presence resets for the next one.
+
+<SubmitStatus />
+
+- `status` is `pending` until the first game session starts and `running` from then on, between game sessions included. A `pending` report at a higher revision than a `running` one answers `400 invalid_request`, and one at or below the highest revision answers `200` and changes nothing.
+- List every player of the create once, `absent` ones included. A player the create never identified answers `400 roster_mismatch`. Give each a `status`: `absent` (not connected to your lobby), `present-not-ready` (connected but not ready for the next game session) or `present-ready` (ready for the next game session or playing it). If you can't tell which present player is not ready, report every present player `present-not-ready`.
+- A player whose client your lobby refused, for example for a version mismatch, is `present-not-ready`: they tried to join, so they are not `absent`, and they cannot play the next game session.
+- If you read presence from a heartbeat or a repeated claim, report a player `absent` only once a lease long enough to cover a heartbeat that times out and is retried has passed, never the moment one heartbeat is late. When your server restarts, don't count the time it was down against players who were connected when it stopped. BluMint takes each report at its word, so a flap records an absence that never happened.
+- `revision` is a positive integer you increase with every status report you send for the lobby. BluMint keeps the report with the highest revision, so a report at or below the highest it holds answers `200` and changes nothing. BluMint orders reports by `revision` alone.
+- Your `200` to the create counts as the first status report, with every player `absent`, so send no status report for the create itself. Send your first when a player arrives, at `revision` 1 or higher.
+- A status report you send before BluMint finishes recording your create answer answers `503 match_not_ready`, so send it again after `Retry-After` ([Answers](#answers)).
+
+### Answers {#answers}
+
+A recorded report answers `200` with its `stage`: `complete` for a result or termination, `live` for a progress report, `aborted` for an abort, and, for a status report, the status of the highest revision BluMint holds.
+
+A refusal answers with a `code` and a `message`, under the code's status:
+
+<SubmitRefusals />
+
+An authentication failure answers with a `message` alone: `401` for a missing or unknown `X-Api-Key`, `403` for a key bound to no game, and `405` for a method other than POST. A request body over {/* contract-constant PARTNER_SUBMIT_MAX_BODY_BYTES */}208896 bytes answers `413` in plain text, and BluMint records nothing, so send a smaller report. A failure on BluMint's side answers `500`. BluMint is alerted, so retry the report. Ignore any field you don't recognize in an answer.

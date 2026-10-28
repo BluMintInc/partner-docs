@@ -1,0 +1,90 @@
+---
+title: "Register your callbacks"
+description: "Tell BluMint the URLs it calls on your game server, and the secret it sends with each."
+---
+
+import RegisterCreate from "/snippets/contract/examples/register.create.mdx";
+import RegisterAnswer from "/snippets/contract/examples/register.answer.mdx";
+import RegisterBearer from "/snippets/contract/examples/register.bearer.mdx";
+import RegisterApiKeyHeader from "/snippets/contract/examples/register.apiKeyHeader.mdx";
+import RegisterQueryParam from "/snippets/contract/examples/register.queryParam.mdx";
+
+## Register your callbacks {#register-your-callbacks}
+
+You register each URL BluMint calls by POSTing it to a registration route with your `X-Api-Key` header.
+
+| Route | Body field | Required | When BluMint calls it |
+| --- | --- | --- | --- |
+| `/api/tournaments/match/setCreate` | `createMatchUrl` | Yes | When a match is ready to play, or each game session of it on single game sessions ([Create a lobby](/guide/create-a-lobby)) |
+| `/api/tournaments/setLookupPlayer` | `lookupPlayerUrl` | Only if BluMint identifies your players by your own player ids | When a player registers, and before each create ([Player lookup](/guide/player-lookup)) |
+| `/api/tournaments/match/setClose` | `closeMatchUrl` | No, but recommended. With it, BluMint waits for you to close a player's lobby before it asks you for their next one, so no player is ever in two of your lobbies at once. | When a lobby you created is no longer needed ([Close a lobby](/guide/close-a-lobby)) |
+
+Register your create-lobby URL:
+
+- Method: `POST`
+- URL: `/api/tournaments/match/setCreate`, with your `X-Api-Key` header
+- Body:
+
+<RegisterCreate />
+
+BluMint answers `200`:
+
+<RegisterAnswer />
+
+This registration sends no secret, so BluMint calls the URL with none and anyone who learns it could pose as BluMint. Send an `authentication` block with each URL you register ([Securing your URLs](#secure-your-callbacks)).
+
+BluMint refuses a registration with:
+
+| Status | Meaning |
+| --- | --- |
+| `400` | The URL is missing, is not a valid absolute URL or is not https, contains a user name or password (`user:pass@`), has an IP-address host other than a public IPv4 address, the `authentication` block is malformed, its header `key` or value is not a valid HTTP header name or value, its header `key` is a name BluMint's HTTP client reserves, its body `key` is a built-in JavaScript object property name, or its `key` names a header or body field BluMint already sends that callback ([Securing your URLs](#secure-your-callbacks)). The message quotes the `key` and says whether it is a header or a body field. |
+| `401` | The `X-Api-Key` header is missing or unknown |
+| `404` | BluMint has not linked your key to a game, or the game it is linked to does not exist. Ask through the [contact form](https://app.blumint.com/contact). |
+| `405` | The method is not POST |
+
+- Registering again replaces the URL. Leave out `authentication` to keep the secret that URL already has.
+- Once BluMint has set up your game, registering your create-lobby URL turns on automatic lobbies for every tournament of your game on the environment you registered it with. A URL you register before then is kept, and BluMint starts calling it once your game is set up.
+- To turn automatic lobbies off, ask through the [contact form](https://app.blumint.com/contact), and BluMint clears `createMatchUrl`. Turning them off stops new creates. Lobbies you already created keep accepting your reports until they end, and a create BluMint already sent may still succeed, in which case its players receive your join link.
+
+### Callback host rules {#callback-host-rules}
+
+- Use a hostname that resolves only to public addresses.
+- Answer at the exact URL you registered. BluMint follows no redirects, so an http to https hop, a hop from your apex domain to `www` or a trailing-slash redirect fails the call.
+- An IP-address host is refused at registration with `400` unless it is a public IPv4 address. An IPv6-address host is always refused.
+- BluMint checks where your hostname points each time it calls your URL, not when you register it, so a successful registration doesn't prove your hostname passes. A hostname that resolves to a private, loopback or link-local address (including the cloud metadata address `169.254.169.254`), a hostname with no DNS record, and any `3xx` answer each fail the call with no retry, so a create fails at once and the host starts the match manually.
+
+## Securing your URLs {#secure-your-callbacks}
+
+You may not want your endpoints to be publicly reachable. Each registration route takes an optional `authentication` block, the secret BluMint sends when it calls that URL. Each URL keeps its own secret, and BluMint calls a URL registered without one with no secret at all. The block has this shape:
+
+```ts
+type Authentication = {
+  secret: string;
+  config: {
+    location: "header" | "queryParam" | "body";
+    key: string;
+    valuePrefix?: string;
+    valueSuffix?: string;
+  };
+};
+```
+
+- `secret` is a value you choose, which BluMint sends to your server so you can tell the call came from BluMint. It is not your BluMint API key, so never put that key here. Use a long random value.
+- BluMint sends `valuePrefix + secret + valueSuffix` under the name in `key`.
+- `header` sends it as a request header, and `queryParam` as a query parameter. A query parameter `key` may be any string.
+- A header `key` must be a valid HTTP header name: one or more letters, digits or characters from `!#$%&'*+-.^_|~` or the backtick, with no spaces. It also cannot be `common`, `delete`, `expect`, `get`, `head`, `patch`, `post`, `put`, `trailer`, `transfer-encoding` or `__proto__` in any case, names BluMint's HTTP client reserves. BluMint refuses any other header `key` with `400`.
+- A header value (`valuePrefix + secret + valueSuffix`) may hold only tabs and Latin-1 characters from U+0020 through U+00FF other than DEL (U+007F), and cannot start or end with a space or tab, which your server's HTTP parser strips. Trim the newline or space a secret read from a file often ends in. BluMint refuses any other header value with `400`.
+- `body` puts it into every POST body BluMint sends that URL (the player lookup, the create and the close) as a top-level field named by `key`. Check that field to authenticate the call, then remove it before you validate the rest of the body or compare it with an earlier request under the same `Idempotency-Key`. A body `key` cannot be a built-in JavaScript object property name such as `constructor`, `toString` or `__proto__`, which BluMint refuses with `400`.
+- BluMint refuses the registration with `400` when `key` names something it already sends that callback in the same place: a body field such as `teams`, any sign-in method field a player lookup can carry (today `discord`, `epic`, `twitch` and `lichess`, plus any BluMint adds later, even one your game does not use), the `Idempotency-Key` header, or a header every BluMint POST carries (`Accept`, `Accept-Encoding`, `Connection`, `Content-Length`, `Content-Type`, `Host` and `User-Agent`). Header names match in any case, and body fields match exactly. A name such as `blumint_secret` passes every rule.
+
+### A bearer token in the Authorization header {#bearer-token}
+
+<RegisterBearer />
+
+### An x-api-key header {#x-api-key-header}
+
+<RegisterApiKeyHeader />
+
+### An api_key query parameter {#api-key-query-parameter}
+
+<RegisterQueryParam />

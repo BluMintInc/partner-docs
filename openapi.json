@@ -1,0 +1,1967 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "title": "BluMint game partner API",
+    "version": "2.0.0",
+    "description": "Reference for the endpoints your game uses to run BluMint tournaments. For the walkthrough, see the [game integration guide](https://docs.blumint.com). To request an API key, fill in the [game partner setup form](https://app.blumint.com/contact/game-partner), and for a question, [contact BluMint](https://app.blumint.com/contact).",
+    "license": {
+      "name": "Apache 2.0",
+      "url": "http://www.apache.org/licenses/LICENSE-2.0.html"
+    }
+  },
+  "servers": [
+    {
+      "description": "Staging, for building and testing",
+      "url": "https://staging.blumint.io/api"
+    },
+    {
+      "description": "Production",
+      "url": "https://app.blumint.com/api"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Api-Key"
+      }
+    },
+    "schemas": {
+      "PartnerCloseReason": {
+        "type": "string",
+        "enum": [
+          "decided",
+          "replaced",
+          "removed",
+          "hostOverride"
+        ],
+        "description": "Why BluMint is closing your lobby. Close it and answer 200 whatever\nthe reason; the reason is for your logs.\n\n- decided: the BluMint match, or a game session of it, got a result\n  without you, for example because the host entered a score.\n- replaced: something other than the host's take over replaced the\n  lobby you made. BluMint handed the match to the host (your create\n  failed for good after you may have made a lobby: a 500, a 409\n  idempotency_key_reused, a 200 it could not use, an answer the\n  decision table does not list, or an outage on its last send; or\n  its hold ran out) and the host then set it up; the host set it up\n  while your create was still on its way; the host reset its score;\n  a player change re-seated it; or you made a second lobby under\n  one Idempotency-Key.\n- removed: the BluMint match was deleted, for example because the\n  host undid the start of the tournament.\n- hostOverride: the host pressed take over on a match you were\n  running or setting up, to run it manually instead."
+      },
+      "CallbackAuthentication": {
+        "type": "object",
+        "required": [
+          "secret",
+          "config"
+        ],
+        "properties": {
+          "secret": {
+            "type": "string",
+            "description": "A value you choose, which BluMint sends to your server so you can tell the call came from BluMint. It is not your BluMint API key, so never put that key here. Use a long random value.",
+            "example": "your-inbound-secret"
+          },
+          "config": {
+            "type": "object",
+            "description": "Where BluMint puts the secret. It sends valuePrefix, then the secret, then valueSuffix, under the name in key. In a header, that value may hold only tabs and Latin-1 characters from U+0020 through U+00FF other than DEL (U+007F), and cannot start or end with a space or tab, which your server's HTTP parser strips, so trim the newline or space a secret read from a file often ends in. BluMint refuses any other header value with 400.",
+            "required": [
+              "location",
+              "key"
+            ],
+            "properties": {
+              "location": {
+                "type": "string",
+                "enum": [
+                  "header",
+                  "queryParam",
+                  "body"
+                ],
+                "description": "header sends the secret as a request header, and queryParam as a query parameter. body puts it into every POST body BluMint sends this URL as a top-level field: check that field, then remove it before you read or validate the rest of the body, and, on a callback that carries an Idempotency-Key, before you compare a request with an earlier one under the same key.",
+                "example": "header"
+              },
+              "key": {
+                "type": "string",
+                "description": "The header name, query parameter or body field that carries the secret. BluMint refuses the registration with 400, quoting the key and saying whether it is a header or a body field, when the key names something it already sends this callback in the same place: a body field such as `teams`, any sign-in method field a player lookup can carry (`discord`, `epic`, `twitch` and `lichess`, even one your game does not use), the `Idempotency-Key` header, or a header every BluMint POST carries (`Accept`, `Accept-Encoding`, `Connection`, `Content-Length`, `Content-Type`, `Host` and `User-Agent`). Header names match in any case, and body fields exactly. A header key must be a valid HTTP header name, one or more letters, digits or characters from `!#$%&'*+-.^_|~` or the backtick, with no spaces, and cannot be `common`, `delete`, `expect`, `get`, `head`, `patch`, `post`, `put`, `trailer`, `transfer-encoding` or `__proto__` in any case, names BluMint's HTTP client reserves. A body key cannot be a built-in JavaScript object property name such as `constructor`, `toString` or `__proto__`. A query parameter key may be any string. A name such as `blumint_secret` passes every rule.",
+                "example": "Authorization"
+              },
+              "valuePrefix": {
+                "type": "string",
+                "description": "Text BluMint sends before the secret, such as \"Bearer \".",
+                "example": "Bearer "
+              },
+              "valueSuffix": {
+                "type": "string",
+                "description": "Text BluMint sends after the secret."
+              }
+            }
+          }
+        }
+      },
+      "MatchCreationSeatIdentities": {
+        "type": "array",
+        "minItems": 1,
+        "description": "The ids that identify this person in your game. If BluMint gets your player ids from your lookup URL, the list holds exactly one entry, `{ inGameId }`: your own player id, as your lookup last answered it. Otherwise it holds one entry, `{ provider, inGameId }`, for each authentication method you chose in the setup form that this person has linked: admit them if any one matches, and identify them in a report by any one of them. Your integration receives only one of the two forms, so you never need to tell them apart.",
+        "items": {
+          "oneOf": [
+            {
+              "$ref": "#/components/schemas/ProviderSeatIdentity"
+            },
+            {
+              "$ref": "#/components/schemas/PartnerSeatIdentity"
+            }
+          ]
+        }
+      },
+      "ProviderSeatIdentity": {
+        "type": "object",
+        "required": [
+          "provider",
+          "inGameId"
+        ],
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "discord",
+              "epic",
+              "twitch",
+              "lichess"
+            ],
+            "description": "The authentication method the person linked on BluMint, one you chose in the setup form."
+          },
+          "inGameId": {
+            "type": "string",
+            "description": "The person's id on that provider. Every inGameId is a string, so store it as a string and send it back as one in every report: an id sent as a number is refused with invalid_request. An id that happens to hold only digits is still a string: a Discord id is longer than a JSON number holds exactly, so an id parsed into a number comes back as a different id."
+          }
+        }
+      },
+      "PartnerSeatIdentity": {
+        "type": "object",
+        "required": [
+          "inGameId"
+        ],
+        "not": {
+          "required": [
+            "provider"
+          ]
+        },
+        "properties": {
+          "inGameId": {
+            "type": "string",
+            "maxLength": 256,
+            "description": "Your player id for this person, as your lookup answered it for this create."
+          }
+        }
+      },
+      "PartnerReportMatchId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256,
+        "description": "The matchId your create-lobby endpoint answered for this lobby, exactly as you sent it."
+      },
+      "PartnerCreateIdempotencyKey": {
+        "type": "string",
+        "maxLength": 128,
+        "pattern": "^[A-Za-z0-9-]{1,128}$",
+        "description": "The Idempotency-Key BluMint sent with the create that made the lobby, exactly as sent: at most 128 ASCII letters, digits and -. Treat it as opaque and never parse it."
+      },
+      "PartnerStats": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "Free-form JSON of your choosing. Every number is finite, every key is non-empty, at most 36 UTF-8 bytes and not of the `__name__` form, every key and string is well-formed Unicode, with no unpaired UTF-16 surrogate, and nesting stops at 18 levels, the stats object itself being the first. Stats that break any of these answer 400 invalid_request naming the problem. The whole request body is at most 208896 bytes (204 KiB), and a body past it answers 413 before BluMint reads it. Any report inside these bounds is stored whole. BluMint stores them so it can show richer data from your game, such as stats on a player's profile."
+      },
+      "PartnerRosterPlayer": {
+        "type": "object",
+        "required": [
+          "inGameId"
+        ],
+        "properties": {
+          "inGameId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "description": "An id BluMint sent for this player in the lobby's create, as a JSON string."
+          }
+        }
+      },
+      "PartnerReportPlayer": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PartnerRosterPlayer"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "stats": {
+                "$ref": "#/components/schemas/PartnerStats"
+              }
+            }
+          }
+        ]
+      },
+      "PartnerReportPlayers": {
+        "type": "array",
+        "minItems": 1,
+        "description": "The team's players in a played game session, each by an in-game id BluMint sent and each optionally carrying its stats. Any one rostered id identifies the team.",
+        "items": {
+          "$ref": "#/components/schemas/PartnerReportPlayer"
+        }
+      },
+      "PartnerRosterPlayers": {
+        "type": "array",
+        "minItems": 1,
+        "description": "The team's players, each by an in-game id BluMint sent and carrying no stats, because a termination or an abort reports no played game session. Any one rostered id identifies the team.",
+        "items": {
+          "$ref": "#/components/schemas/PartnerRosterPlayer"
+        }
+      },
+      "Tournament": {
+        "type": "object",
+        "required": [
+          "gameId"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "6a6d45ea-d41e-41df-97e2-320783a90f7b"
+          },
+          "title": {
+            "type": "string",
+            "example": "Deck Boss Version 3"
+          },
+          "gameTitle": {
+            "type": "string",
+            "example": "Raini:The Lords of Light"
+          },
+          "gameId": {
+            "description": "kebab-case title of the tournament's parent game",
+            "type": "string",
+            "example": "raini-the-lords-of-light"
+          },
+          "endpoint": {
+            "type": "string",
+            "nullable": true,
+            "example": null
+          },
+          "date": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2023-05-04T17:00:00.000Z"
+          },
+          "endDate": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2023-05-04T19:30:00.000Z"
+          },
+          "imgUrl": {
+            "type": "string",
+            "nullable": true,
+            "example": "https://firebasestorage.googleapis.com/v0/b/blumint-development.appspot.com/o/Game%2Fraini-the-lords-of-light%2FRTLOLTourneyThumbnail-128x128.png?alt=media&token=a5b33dcd-7cef-4db1-a36a-5878a2921ddf"
+          },
+          "blurb": {
+            "$ref": "#/components/schemas/Blurb"
+          },
+          "sponsors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Sponsor"
+            },
+            "nullable": true
+          },
+          "region": {
+            "type": "string",
+            "nullable": true,
+            "example": "Global"
+          },
+          "tournamentDetails": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TournamentDetail"
+            }
+          },
+          "checkInTime": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2023-05-04T16:00:00.000Z"
+          },
+          "readyTime": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2023-05-04T16:55:00.000Z"
+          },
+          "scoreOption": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScoreOption"
+            }
+          }
+        }
+      },
+      "Blurb": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "example": "Raini:The Lords of Light Tournament"
+          },
+          "description": {
+            "type": "string",
+            "example": "Join us for an exciting single-elimination tournament with a $50 prize pool!"
+          },
+          "rules": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "example": [
+              "No cheating",
+              "Participants must check-in before the event"
+            ]
+          }
+        }
+      },
+      "Sponsor": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "SupraOracles"
+          },
+          "imgUrl": {
+            "type": "string",
+            "nullable": true,
+            "example": "https://firebasestorage.googleapis.com/v0/b/blumint-development.appspot.com/o/Game%2Fbig-time%2FSupraOraclesLogo.png?alt=media&token=2403e048-af79-45e8-8da0-341ae5a5d21c"
+          },
+          "redirectUrl": {
+            "type": "string",
+            "nullable": true,
+            "example": "https://supraoracles.com/"
+          },
+          "width": {
+            "type": "integer",
+            "nullable": true,
+            "example": 200
+          },
+          "height": {
+            "type": "integer",
+            "nullable": true,
+            "example": 200
+          }
+        }
+      },
+      "TournamentDetail": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "example": "Registration And Check In"
+          },
+          "body": {
+            "type": "string",
+            "example": "All players must register to participate in this tournament. You may register via the panel below. You will be prompted to provide your Discord ID and email address."
+          }
+        }
+      },
+      "ScoreOption": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "Score"
+          },
+          "units": {
+            "type": "string",
+            "example": "Points"
+          },
+          "value": {
+            "type": "number",
+            "nullable": true,
+            "example": 100
+          },
+          "orderBy": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "example": "desc"
+          }
+        }
+      }
+    },
+    "responses": {
+      "CallbackRegistrationRefused": {
+        "description": "The URL is missing, is not a valid absolute URL or is not https, contains a user name or password (`user:pass@`), has an IP-address host other than a public IPv4 address, the authentication block is malformed, its header key or value is not a valid HTTP header name or value, its header key is a name BluMint's HTTP client reserves, its body key is a built-in JavaScript object property name, or its key names a header or body field BluMint already sends this callback, which for a lookup is every sign-in method field a lookup can carry. A refusal of the key quotes it and says whether it is a header or a body field."
+      },
+      "CallbackRegistrationUnauthenticated": {
+        "description": "The X-Api-Key header is missing or unknown."
+      },
+      "CallbackRegistrationGameNotFound": {
+        "description": "The API key is bound to no game, or its game does not exist."
+      },
+      "CallbackRegistrationMethodNotAllowed": {
+        "description": "The method is not POST."
+      }
+    }
+  },
+  "security": [
+    {
+      "ApiKeyAuth": []
+    }
+  ],
+  "paths": {
+    "/tournaments/match/setClose": {
+      "post": {
+        "operationId": "setCloseMatch",
+        "summary": "Registers your close-lobby callback URL.",
+        "description": "Registers the https URL BluMint calls to tell you to close a lobby you\ncreated that BluMint no longer needs: the host decided the match,\nstarted it themselves or took it over to run it manually, a reset\ncleared it, or the match was deleted. Registration is optional but\nrecommended. With a close URL, BluMint waits for your 200 to each\nclose before it asks you for a new lobby for any player in the closed\none, so no player is ever in two of your lobbies at once. Without\none, BluMint sends you no closes and does not wait, so a create can\nidentify a player whose earlier lobby is still open on your side, and you\nexpire such lobbies yourself. Registering again replaces the\nprevious URL. The URL's host must resolve only to public addresses,\nan IP-address host must be a public IPv4 address, and BluMint follows\nno redirects, so the URL must answer directly.\n\nWhich answer to send when BluMint calls your URL:\n\n| Situation | Status | What happens next |\n| --- | --- | --- |\n| You closed the lobby, it had already ended, or you made no lobby under the key and will refuse one | `200` | The player's next match is created. |\n| You are down or overloaded | `502`, `503`, `504`, `408`, `429`, or no answer | The player's next match waits while BluMint re-sends the close every 60 seconds, or once the wait your Retry-After names has passed when that is later, waiting at most 5 minutes, for up to 30 minutes, then goes to the host. |\n\nFor what BluMint sends to your URL and how to answer it, see [Close a lobby](/guide/close-a-lobby).",
+        "tags": [
+          "Tournaments"
+        ],
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "closeMatchUrl"
+                ],
+                "properties": {
+                  "closeMatchUrl": {
+                    "type": "string",
+                    "format": "uri",
+                    "description": "The https URL of your close-lobby endpoint.",
+                    "example": "https://www.yourgame.com/api/match/close"
+                  },
+                  "authentication": {
+                    "description": "The secret BluMint sends when it calls your close-lobby endpoint. When omitted, any secret registered earlier stays in place.",
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/CallbackAuthentication"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "callbacks": {
+          "matchClose": {
+            "{$request.body#/closeMatchUrl}": {
+              "post": {
+                "description": "Close the lobby and answer 200. BluMint identifies the lobby\nby the Idempotency-Key of the create that made it, including a\ncreate whose answer BluMint never received or that was still\nin flight when its match was decided. Close the lobby you made\nunder that key, and when you made none, record the key as\nclosed, answer 200, and refuse a later create under it with\n409 idempotency_key_reused: a create under that key can still\nreach you after the close, and a lobby made from it would have\nno players and might never be closed. A close takes the same\nper-key reservation as a create: when a create under the key\nis still building, record the key closed and answer 200, and\nthat create re-reads the mark before it commits its lobby,\ntears down what it built and answers 409\nidempotency_key_reused. A lobby that already\nended answers 200 too, including one whose key you no longer\nkeep. Close the lobby and answer 200 whatever the reason,\nincluding one you do not recognize. Keep each\ncreate's key for as long as you keep the lobby it made, so a\nclose can always find it. The same close can arrive more than\nonce, always under the same Idempotency-Key. BluMint stops\nwaiting after 10 seconds and treats a timeout as no answer,\nthe outage row of the decision table above. A Retry-After wait\nreaching past the re-send window is cut short, so one last\nclose is sent.\n\nThat table lists every answer BluMint acts on. A key you hold\nnothing under is the 200 row, never a 404. When your server\nis down only for a while, answer 503 or another status on the\noutage row, so BluMint re-sends the close. BluMint reads any\nanswer the table does not list, a 404 or a 500 included, as\na failed close, since it can't tell whether the lobby is still\nopen with players in it, and every match waiting on it goes\nto the host. Once a close's matches have gone to the host,\nBluMint never sends that close again: treat the lobby as\nclosed and expire it, so a later create identifying its\nplayers never meets player_busy.",
+                "parameters": [
+                  {
+                    "name": "Idempotency-Key",
+                    "in": "header",
+                    "required": true,
+                    "description": "An opaque value BluMint derives for each close, the same on every delivery of it: close-key- followed by the create's Idempotency-Key. It holds only ASCII letters, digits and -, and can be longer than a create's key.",
+                    "schema": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9-]+$"
+                    },
+                    "example": "close-key-tA1b2-round-1-match-1"
+                  }
+                ],
+                "requestBody": {
+                  "required": true,
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "required": [
+                          "idempotencyKey",
+                          "reason"
+                        ],
+                        "properties": {
+                          "idempotencyKey": {
+                            "allOf": [
+                              {
+                                "$ref": "#/components/schemas/PartnerCreateIdempotencyKey"
+                              }
+                            ],
+                            "description": "The Idempotency-Key of the create that made the lobby to close, never your matchId. It can belong to a create whose answer never reached BluMint, or to one that never reached you."
+                          },
+                          "reason": {
+                            "$ref": "#/components/schemas/PartnerCloseReason"
+                          }
+                        }
+                      },
+                      "examples": {
+                        "decided": {
+                          "summary": "A lobby whose match the host decided",
+                          "value": {
+                            "idempotencyKey": "tA1b2-round-1-match-1",
+                            "reason": "decided"
+                          }
+                        },
+                        "removed": {
+                          "summary": "A match deleted before its create's answer reached BluMint",
+                          "value": {
+                            "idempotencyKey": "tA1b2-round-1-match-1",
+                            "reason": "removed"
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "responses": {
+                  "200": {
+                    "description": "The lobby is closed or had already ended, or no lobby exists under the key and you will refuse a create under it."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The close-lobby callback URL is registered.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "message"
+                  ],
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "Success - Match close callback URL set successfully."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/CallbackRegistrationRefused"
+          },
+          "401": {
+            "$ref": "#/components/responses/CallbackRegistrationUnauthenticated"
+          },
+          "404": {
+            "$ref": "#/components/responses/CallbackRegistrationGameNotFound"
+          },
+          "405": {
+            "$ref": "#/components/responses/CallbackRegistrationMethodNotAllowed"
+          }
+        }
+      }
+    },
+    "/tournaments/match/setCreate": {
+      "post": {
+        "operationId": "setCreateMatch",
+        "summary": "Registers your create-lobby callback URL.",
+        "description": "Registers the https URL BluMint calls when a BluMint match is ready to\nplay. Your endpoint creates a lobby, lets only the players listed in\nteams play, and answers with how they join, as you chose in the setup\nform: a link players open, a lobby code players type, or, if your own\nclient puts the players in, a link the host can open to watch. In the\nsetup form you also give the range of teams per match and of players\nper team your game server runs. A host can't set up a tournament of\nyour game outside those ranges, so every create you receive fits\nthem, and the range of teams is exactly two on a best-of series.\nIgnore any field you do not recognize in a body BluMint sends you:\nBluMint can add a field at any time, so a server that refuses an\nunknown field stops working when one is added. Use and keep the player and\nspectator ids BluMint sends only to put players into matches in your\ngame's BluMint tournaments and to let the spectators who chose to\nwatch do so. Share them with no one else, and keep them secure.\nRegistering again replaces the previous URL. The URL's host must\nresolve only to public addresses, an IP-address host must be a public\nIPv4 address, and BluMint follows no redirects, so the URL must\nanswer directly.\n\nWhich answer to send when BluMint calls your URL:\n\n| Situation | Status | Code | Data field | What happens next |\n| --- | --- | --- | --- | --- |\n| Created, or a repeat of a key already created | `200` |  |  | The players get the match and it starts. |\n| You can't match the id of a player the create identifies | `400` | `player_unlinked` | `players` | For a seat BluMint filled from an account the player linked on BluMint, such as a Lichess username, BluMint tells the player you didn't recognize that account and retries under the same key every 60 seconds, so a retry can name an account you already refused. A player still unmatched when the tournament's hold length runs out is disqualified. For a seat BluMint filled from your lookup, BluMint looks the named players up again and retries once under the same key. If you answer that retry with player_unlinked again, the host takes the match, and any other answer to it does what its own row says. If your lookup no longer finds a player, BluMint asks the player to connect their account and retries under the same key every 60 seconds. A player still unlinked when the tournament's hold length runs out is disqualified. While the match is held, a player_unlinked on a looked-up seat keeps it held until the next retry. |\n| A player the create identifies is still in another of your lobbies | `423` | `player_busy` | `players` | BluMint tells the named players to finish their other match and retries under the same key every 60 seconds. A player still busy when the tournament's hold length runs out is disqualified. |\n| You are down or overloaded | `502`, `503`, `504`, `408`, `429`, or no answer |  |  | The match keeps reading as being set up, and BluMint tells every player the create identifies once that you aren't responding. BluMint retries under the same key every 60 seconds, or once the wait your Retry-After names has passed when that is later, waiting at most 5 minutes. If you are still down when the tournament's hold length runs out, the host takes the match and nobody is disqualified. |\n| You cannot run this match | `400` | `match_unsupported` |  | The host takes the match and starts it manually. |\n| BluMint's request breaks the rules in this guide | `400` | `invalid_request` |  | The host takes the match and starts it manually. |\n| The key arrived with a different body, or a close already named it | `409` | `idempotency_key_reused` |  | The host takes the match and starts it manually. |\n| Your server failed on this request | `500` |  |  | The host takes the match and starts it manually. |\n\nFor what BluMint sends to your URL and how to answer it, see [Create a lobby](/guide/create-a-lobby).",
+        "tags": [
+          "Tournaments"
+        ],
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "createMatchUrl"
+                ],
+                "properties": {
+                  "createMatchUrl": {
+                    "type": "string",
+                    "format": "uri",
+                    "description": "The https URL of your create-lobby endpoint.",
+                    "example": "https://www.yourgame.com/api/match/create"
+                  },
+                  "authentication": {
+                    "description": "The secret BluMint sends when it calls your create-lobby endpoint. When omitted, any secret registered earlier stays in place.",
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/CallbackAuthentication"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "callbacks": {
+          "matchCreation": {
+            "{$request.body#/createMatchUrl}": {
+              "post": {
+                "description": "You choose in the setup form how your server runs a match.\n\n- Best-of series (the better user experience): your server\n  runs the whole best-of series in one lobby. BluMint sends\n  one create per BluMint match, carrying series.gamesToWin,\n  and players join that one lobby for the whole match.\n- Single game sessions: your server runs one game session at\n  a time. BluMint sends one create per game session, with no\n  series, and players join a new lobby before each game\n  session.\n\nOn a best-of series, BluMint sometimes needs a new lobby for a\nmatch already under way, for example after you abort with\nretryable: true. That create gives each team startingWins: the\ngame sessions the team has already won in the match as\nBluMint records it, which can be 0 after the host resets the\nscore. The first create for a BluMint match carries no\nstartingWins, so count from 0. Count startingWins into every\nprogress, result and abort report for the new lobby. A report\nwith fewer wins than startingWins answers 400 invalid_wins. If\nyour server cannot resume a best-of series from a starting\nscore, choose single game sessions in the setup form.\n\nBluMint can send one create more than once: an answer can be\nlost on the network or arrive after BluMint's deadline, and\nBluMint retries a create through an outage or a hold. When an\nanswer is lost, BluMint can't tell whether you made the lobby,\nso it sends the request again, and a server that made a new\nlobby for every request would split one match's players\nacross two lobbies. The Idempotency-Key header tells you which\nrequests are the same create.\n\nA repeated create carrying the same Idempotency-Key must\nreturn the same lobby. The key is at most 128 ASCII letters,\ndigits and -, so it always fits as a matchId. BluMint closes a\nlobby by its key, and every report names it, so keep each key\nfor as long as you keep the lobby it made.\nKeep a key whose create made no lobby for at\nleast 3 hours, the longest BluMint\ncan go on sending that key's create and its close, so a close\ncan mark it closed and a later create under it answers 409\nidempotency_key_reused. Two requests with one key can arrive\nat the same moment, so serialize on the key, for example with\na unique reservation row, so one key yields one lobby. A close\ntakes the same reservation: a close that finds a create under\nits key still building records the key closed and answers\n200, and before that create commits its lobby, it re-reads the\nmark under the reservation, tears down what it built and\nanswers 409 idempotency_key_reused, which BluMint expects for\na match it moved past. Honor the key one\nof two ways: store the key with the lobby and answer a repeat\nwith the stored lobby, or derive your matchId from the key, the\nkey itself or a UUIDv5 of it, so your own uniqueness on lobby\nids finds the existing lobby and the key lives exactly as long\nas its lobby, which satisfies both rules. Every repeat\nof one create carries the same key. BluMint sends a new key\nwhenever it needs a new lobby for the same BluMint match (or\nthe same game session, on single game sessions): after you\nabort with retryable: true, after the host resets the score,\nand after the host undoes the start of the tournament and\nstarts it again. A matchId you derive from the key is\ntherefore the same for every repeat and new for every new\nlobby. If you registered a close URL, BluMint waits for your\n200 to a close before it creates another lobby for any player\nin the closed lobby.\n\nAnswer within 30 seconds: BluMint waits 40 seconds for each\nrequest, counted on the wall clock and including DNS lookup\nand connection time. Players are waiting while you create the\nlobby, so BluMint holds the match rather than let one stuck\nrequest hold them up, and the 10 seconds between the two\ncover the network, so an answer you send in time is never\ntaken for an outage. If a request arrives for a key you are\nstill creating a lobby for, answer with that lobby once it\nexists, or answer 503 so BluMint sends the same key again.\nNever answer 409 there: BluMint treats 409 as final and closes\nthe lobby your first request is still creating. Never start a\nsecond lobby for one key.\n\nWhen a round starts, BluMint sends the creates for all of its\nmatches at the same moment, and sets no limit on how many it\nsends at once: a 256-team single-elimination tournament sends\nabout 128 together. Handle the burst rather than answering\n429, which BluMint reads as an outage answer.\n\nWhich answer to send when is the decision table above.\n\nWhen your server is down only for a while, answer 503 or\nanother status on the outage row. An outage answer may carry\nRetry-After, in seconds or as an HTTP date. The outage row\nsays how long BluMint then waits, and a wait reaching past the\nend of the hold is cut short, so BluMint still sends one last\ncreate. Any answer the table does not list is final and does\nwhat the 500 row says. BluMint reads a 500 as your code\nfailing on this request, which sending it again would only\nrepeat, so when a problem will clear on its own, such as a\ndeploy, a restart or a full queue, answer 503, not 500. Never\nanswer a busy player with a 5xx, which BluMint reads as your\nserver being down. After\na 500, idempotency_key_reused, an answer the table does not\nlist, a 200 that breaks the rules below, or an outage answer\nto BluMint's last try, you may hold a lobby no player will\njoin: with a close URL registered, BluMint closes it by its\nkey, and without one, expire any lobby none of its players\njoins. After match_unsupported, invalid_request or\nplayer_unlinked, BluMint assumes you made no lobby and sends\nno close, so check the request before you create anything. A\nrefusal carries only its code and, where the table names it,\nplayers. BluMint ignores any other text you add. Send\nplayer_unlinked for any player you can't match to one of\nyours, listing in players every id from the request you don't\nrecognize. Treat a refused create as if it never happened:\nwhen you answer player_unlinked or player_busy, create nothing\nand don't mark the Idempotency-Key as used. BluMint sends the\nsame key again, possibly with corrected player ids, and you\nmust handle that retry like a first request.",
+                "parameters": [
+                  {
+                    "name": "Idempotency-Key",
+                    "in": "header",
+                    "required": true,
+                    "description": "A key BluMint chooses for this one create, built from BluMint's own ids: at most 128 ASCII letters, digits and -. Treat it as opaque and never parse it.",
+                    "schema": {
+                      "$ref": "#/components/schemas/PartnerCreateIdempotencyKey"
+                    },
+                    "example": "tA1b2-round-1-match-1"
+                  }
+                ],
+                "requestBody": {
+                  "required": true,
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "required": [
+                          "teams",
+                          "spectators",
+                          "matchSettings",
+                          "readyWithinSeconds"
+                        ],
+                        "properties": {
+                          "teams": {
+                            "type": "array",
+                            "description": "Every team in the match, within the teams-per-match range you gave in the setup form, which is exactly two on a best-of series. Admit only these players, even when someone else learns the join link or lobby code.",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "name",
+                                "players"
+                              ],
+                              "properties": {
+                                "name": {
+                                  "type": "string"
+                                },
+                                "players": {
+                                  "type": "array",
+                                  "description": "One entry per team member.",
+                                  "items": {
+                                    "type": "object",
+                                    "required": [
+                                      "identities"
+                                    ],
+                                    "properties": {
+                                      "identities": {
+                                        "$ref": "#/components/schemas/MatchCreationSeatIdentities"
+                                      }
+                                    }
+                                  }
+                                },
+                                "startingWins": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "description": "On a best-of series, present on every team when BluMint asks you for a new lobby for a match already under way: after you abort with retryable: true, and after the host resets the match. It is the game sessions of this match BluMint has already recorded for the team, 0 after a reset. Absent on the first create for a match, including BluMint's retries of it, and on every create for a single game session. Count it into every report of the new lobby."
+                                }
+                              }
+                            }
+                          },
+                          "spectators": {
+                            "type": "array",
+                            "maxItems": 16,
+                            "description": "The host, streamers and moderators of the tournament who chose to watch, never a player in the match or anyone registered in the tournament. Always present, and empty when nobody is listed. It can list more spectators than your lobby admits. If your game supports watching, admit listed identities as spectators, in list order, until your lobby holds as many as it admits; a spectator can never play or report a result. Otherwise ignore the field. Never refuse a create because of its spectators.",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "identities"
+                              ],
+                              "properties": {
+                                "identities": {
+                                  "$ref": "#/components/schemas/MatchCreationSeatIdentities"
+                                }
+                              }
+                            }
+                          },
+                          "matchSettings": {
+                            "type": "object",
+                            "additionalProperties": true,
+                            "description": "The match settings the host chose, passed to you unchanged, so hosts can run custom events of your game, such as a one-map tournament or a short time limit for a fast bracket. Its keys are the settings of your game you listed in the setup form. Set up the lobby with each one. An empty object means the host chose none, so use your defaults. Answer 400 match_unsupported for a setting you cannot run."
+                          },
+                          "readyWithinSeconds": {
+                            "type": "integer",
+                            "minimum": 300,
+                            "maximum": 1800,
+                            "description": "The tournament's hold length in seconds, which the host sets between 5 and 30 minutes, 10 by default. BluMint tells every player to be ready this long after their match starts, or be disqualified, and BluMint times that itself. If your game ends a lobby on its own when a player doesn't show up, let that happen no earlier than this after you answer the create; otherwise ignore the field. The host can lengthen the hold while a match waits, so a repeat of one Idempotency-Key can carry a larger value. Leave it out when you compare a repeat's body."
+                          },
+                          "series": {
+                            "type": "object",
+                            "description": "Present on every best-of series create, and absent on single game sessions.",
+                            "required": [
+                              "gamesToWin"
+                            ],
+                            "properties": {
+                              "gamesToWin": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "description": "The game sessions a team must win to take the match."
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "example": {
+                        "teams": [
+                          {
+                            "name": "Team Alice",
+                            "players": [
+                              {
+                                "identities": [
+                                  {
+                                    "provider": "lichess",
+                                    "inGameId": "alice"
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "name": "Team Bob",
+                            "players": [
+                              {
+                                "identities": [
+                                  {
+                                    "provider": "lichess",
+                                    "inGameId": "bob"
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ],
+                        "spectators": [],
+                        "matchSettings": {
+                          "clock": {
+                            "limitSeconds": 180,
+                            "incrementSeconds": 2
+                          },
+                          "rated": false
+                        },
+                        "readyWithinSeconds": 600,
+                        "series": {
+                          "gamesToWin": 3
+                        }
+                      }
+                    }
+                  }
+                },
+                "responses": {
+                  "200": {
+                    "description": "The lobby exists. Answer matchId and one of three ways for players to get in, the one your integration declared in the setup form. A join link: send matchUrl, which players open. A lobby code: send lobbyCode, which players type into your game. Neither, because your own game client puts players into the lobby: send spectateUrl, a watch link BluMint offers the host so they can follow the match. Send only the field of your own way in. A missing field, a field of another way in, or a link on another hostname fails the create for good: the host takes the match and starts it manually.",
+                    "content": {
+                      "application/json": {
+                        "schema": {
+                          "type": "object",
+                          "required": [
+                            "matchId"
+                          ],
+                          "properties": {
+                            "matchId": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 256,
+                              "description": "Your id for this lobby. BluMint treats it as opaque, sends it back unchanged, and you name it in every report. It is well-formed Unicode, with no unpaired UTF-16 surrogate."
+                            },
+                            "matchUrl": {
+                              "type": "string",
+                              "format": "uri",
+                              "maxLength": 2048,
+                              "description": "On an integration whose players join by a link, the link players open, to a page on your site or your game client directly. It is https, carries no `user:pass@`, and its hostname is exactly one of the join-link hostnames you gave BluMint for this environment; a subdomain does not match. A lobby code in the fragment after `#` is fine, since BluMint sends the link byte for byte."
+                            },
+                            "lobbyCode": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 32,
+                              "description": "On an integration whose players join by a code, the code players type into your game, using only ASCII letters, digits, spaces, `_`, `*`, `.`, the backtick and `-`. BluMint shows it in chat, so it is never wrapped in `*`, `_` or backticks and holds no link or email address."
+                            },
+                            "spectateUrl": {
+                              "type": "string",
+                              "format": "uri",
+                              "maxLength": 2048,
+                              "description": "On an integration whose own game client puts players into the lobby, the https watch link BluMint offers the host, on one of the watch-link hostnames you gave BluMint. Anyone viewing the tournament can read it, so it lets its holder watch and nothing more: never play, control the match, or get the access you give the spectators listed in the create."
+                            }
+                          }
+                        },
+                        "example": {
+                          "matchId": "4f9c2a7e",
+                          "matchUrl": "https://lichess.org/AbCd1234"
+                        }
+                      }
+                    }
+                  },
+                  "400": {
+                    "description": "A refusal the decision table above lists.",
+                    "content": {
+                      "application/json": {
+                        "schema": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "title": "player_unlinked",
+                              "required": [
+                                "code",
+                                "players"
+                              ],
+                              "properties": {
+                                "code": {
+                                  "type": "string",
+                                  "enum": [
+                                    "player_unlinked"
+                                  ]
+                                },
+                                "players": {
+                                  "type": "array",
+                                  "minItems": 1,
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "description": "Every id from the request you can't match to one of your players."
+                                }
+                              }
+                            },
+                            {
+                              "type": "object",
+                              "title": "request refused",
+                              "required": [
+                                "code"
+                              ],
+                              "properties": {
+                                "code": {
+                                  "type": "string",
+                                  "enum": [
+                                    "match_unsupported",
+                                    "invalid_request"
+                                  ]
+                                }
+                              }
+                            }
+                          ]
+                        },
+                        "example": {
+                          "code": "player_unlinked",
+                          "players": [
+                            "emb1_example"
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "409": {
+                    "description": "idempotency_key_reused, the decision table's refusal of a key that arrived with a different body or that a close already named.",
+                    "content": {
+                      "application/json": {
+                        "schema": {
+                          "type": "object",
+                          "required": [
+                            "code"
+                          ],
+                          "properties": {
+                            "code": {
+                              "type": "string",
+                              "enum": [
+                                "idempotency_key_reused"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "423": {
+                    "description": "player_busy, the decision table's answer when a player the create identifies is still in another of your lobbies. BluMint holds the match and retries.",
+                    "content": {
+                      "application/json": {
+                        "schema": {
+                          "type": "object",
+                          "required": [
+                            "code",
+                            "players"
+                          ],
+                          "properties": {
+                            "code": {
+                              "type": "string",
+                              "enum": [
+                                "player_busy"
+                              ]
+                            },
+                            "players": {
+                              "type": "array",
+                              "minItems": 1,
+                              "items": {
+                                "type": "string"
+                              },
+                              "description": "Every player id from the request that another of your lobbies still holds."
+                            }
+                          }
+                        },
+                        "example": {
+                          "code": "player_busy",
+                          "players": [
+                            "emb1_example"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The create-lobby callback URL is registered.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "message"
+                  ],
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "Success - Match creation callback URL set successfully."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/CallbackRegistrationRefused"
+          },
+          "401": {
+            "$ref": "#/components/responses/CallbackRegistrationUnauthenticated"
+          },
+          "404": {
+            "$ref": "#/components/responses/CallbackRegistrationGameNotFound"
+          },
+          "405": {
+            "$ref": "#/components/responses/CallbackRegistrationMethodNotAllowed"
+          }
+        }
+      }
+    },
+    "/tournaments/match/submit": {
+      "post": {
+        "operationId": "submitMatchResult",
+        "summary": "Reports what happened in a lobby your server created.",
+        "description": "Name the matchId your create-lobby endpoint answered, and as\nidempotencyKey the Idempotency-Key of the create that made it, on\nevery report. A report sent before your create answer reaches\nBluMint finds no match under its matchId yet, and the key tells\nBluMint which create it is still recording, so it answers 503\nmatch_not_ready rather than 404 unknown_match. On a best-of series\nlobby, send a progress report\nafter each game session that did not decide the match and a result\nwhen a game session does. On a single game session lobby, send one\nresult for it. A result or termination decides the\nmatch and moves the tournament on, a progress report records each\ngame session, a status report tells BluMint who is in your lobby and\nready, and an abort ends the lobby without a result. Teams are\nidentified by any of their players' in-game ids, as BluMint sent them in the\ncreate: one id from a team is enough, and BluMint ignores an id it\ndid not send. Every id is a JSON string, and an id sent as a number\nis refused with invalid_request. Every id and note is well-formed\nUnicode, with no unpaired UTF-16 surrogate, and each length bound\ncounts characters. Ignore any field you do not\nrecognize in BluMint's answers.\n\nOn a best-of series, every team in a progress report, result or\nabort carries wins, a non-negative integer that counts the starting\nwins. On single game sessions, every team in a result carries\nplacement, from 1, and you send no progress reports. No team carries\nboth. On a best-of series, count the startingWins the create sent\ninto every progress, result and abort report. A report with fewer\nwins than startingWins answers 400 invalid_wins. placement is an\ninteger from 1 that ranks every team, and draws are refused. Each\nplayer is an object, `{ inGameId, stats? }`. A result or progress\nreport may carry free-form stats on the match, each team and each\nplayer, at most 18 levels deep with every key at most 36 UTF-8\nbytes, in a request body of at most 208896 bytes (see PartnerStats),\nwhich let BluMint show richer data from your game, such as stats on\na player's profile, and build deeper integrations with it. Report a\nfair-play violation as a termination with reason\nfairPlayViolation, and any other forfeit with reason forfeit. BluMint\nstores a termination's reason and note with the report. Timing a\nplayer who doesn't show up is BluMint's job, not your game's, so\nabort only when your game itself ends the match without a result.\n\nWhich report to send when:\n\n| Situation | Report | Outcome field | `retryable` | What happens next |\n| --- | --- | --- | --- | --- |\n| A game session ended without deciding the match | `progress` | `wins` |  | The match shows the best-of series' score so far at once. |\n| A best-of series ended, deciding the match | `result` | `wins` |  | BluMint records the result and moves the tournament on. |\n| A single game session ended, deciding the match | `result` | `placement` |  | BluMint records the result and moves the tournament on. |\n| A player forfeited or broke your fair-play rules | `termination` |  |  | The team you identify loses the BluMint match, including any game sessions not yet played, whatever the score so far. It is not disqualified from the tournament: the tournament places it as this match's loser. |\n| A best-of series ended without a result your game can stand behind (a server failure, a dispute, a client that never came back), and a new lobby could succeed | `abort` | `wins` | `true` | BluMint calls your create-lobby URL again under a new Idempotency-Key, so the players get a new lobby. startingWins carries the game sessions each team already won. BluMint creates a new lobby for one match at most two times, counting new lobbies after a host's reset, and a retryable abort after that hands the match to the host. |\n| A best-of series ended without a result your game can stand behind, and a new lobby would end the same way | `abort` | `wins` | `false` | The host takes the match and starts it manually. |\n| A single game session ended without a result your game can stand behind (a server failure, a dispute, a client that never came back), and a new lobby could succeed | `abort` |  | `true` | BluMint calls your create-lobby URL again under a new Idempotency-Key, so the players get a new lobby. BluMint creates a new lobby for one game session at most two times, counting new lobbies after a host's reset, and a retryable abort after that hands the match to the host. |\n| A single game session ended without a result your game can stand behind, and a new lobby would end the same way | `abort` |  | `false` | The host takes the match and starts it manually. |\n| A player arrived or became ready for the next game session, a game session started, or a game session ended | `status` |  |  | Nothing a player sees changes. |\n\nWhen a new lobby could succeed, send the abort with retryable: true,\nand otherwise with retryable: false. BluMint refuses a report this\ntable does not list with invalid_request.\n\nStatus reports are required, on every presence change: each player's\narrival or departure, a player becoming ready for the next game\nsession, and after each game session, when presence resets for the\nnext one. Your 200 to the create counts as the first status report,\nwith every player absent, so send no status report for the create\nitself, and send your first when a player arrives, at revision 1 or\nhigher. status is pending until the first game session starts and\nrunning from then on, so a pending report at a higher revision than\na running one answers invalid_request, and one at or below the\nhighest revision answers 200 and changes nothing. Each player is\nabsent (not connected to your\nlobby), present-not-ready (connected but not ready for the next game\nsession) or present-ready (ready for the next game session or playing\nit). List every player of the create, absent ones included. If you\ncannot tell which present player is not ready, report every present\nplayer present-not-ready. A player whose client your lobby refused,\nfor example for a version mismatch, is present-not-ready.\nrevision is a positive integer you increase with every status report\nyou send for the match. BluMint keeps the report with the highest\nrevision, so a report at or below the highest it holds answers 200\nand changes nothing. BluMint orders reports by revision alone.\n\nHow to act on each error code:\n\n| Code | Status | Meaning | What to do |\n| --- | --- | --- | --- |\n| `invalid_request` | `400` | The body breaks the schema, and the message names the first bad field | Fix the report and send it again. |\n| `invalid_placements` | `400` | Placements do not rank every team in the match | Fix the report and send it again. |\n| `invalid_wins` | `400` | Your `wins` break a rule of the match's tally, and the message names each rule you broke. Each team's `wins` is a whole number from 0 to `gamesToWin`; no team is below its `startingWins`, or below the wins your earlier reports already gave it; a result has exactly one team at `gamesToWin`, and a progress report or abort has none; every team from the create appears; and an abort identifies no team twice | Fix the report and send it again. |\n| `roster_mismatch` | `400` | The players you identified for a team do not belong to exactly one of the teams BluMint sent in this lobby's create, two of your teams identify the same team, or a status report identifies a player the create never identified or identifies one twice | Check how you map player ids, then send the report again. Resending it unchanged gets the same answer. |\n| `unknown_match` | `404` | BluMint has no lobby under this `matchId` for your API key's game, and your `idempotencyKey` identifies no create BluMint is still recording: your create answer never arrived or BluMint refused it, or the host switched the tournament to another game | Stop without alerting. |\n| `match_not_ready` | `503` | The match cannot take results yet, or BluMint is still recording your answer to the create your `idempotencyKey` identifies, because you sent the report before your answer reached BluMint. The same report succeeds once BluMint records the answer, whichever players it identifies | Send the same report again after the `Retry-After` header's 30 seconds. |\n| `match_closed` | `409` | BluMint no longer takes reports for this `matchId`: the match is already decided, BluMint moved on to a later game session of it, the host took it over or reset its score, an earlier abort ended this `matchId`, the match was deleted, or the next match of the tournament already started. It is normal operation, not a fault in your report | Stop without alerting. Resending changes nothing. |\n| `already_scored` | `409` | A result for this `matchId` is already recorded: your own earlier result or termination, for example a retry of a report that already succeeded, or, on single game sessions, a score the host entered by hand for that game session | Stop. The recorded result stands even where it differs from yours. |\n\nA failure on BluMint's side answers 500. BluMint is alerted, so\nretry the report.",
+        "tags": [
+          "Tournaments"
+        ],
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "title": "result",
+                    "required": [
+                      "mode",
+                      "matchId",
+                      "idempotencyKey",
+                      "teams"
+                    ],
+                    "properties": {
+                      "mode": {
+                        "type": "string",
+                        "enum": [
+                          "result"
+                        ]
+                      },
+                      "matchId": {
+                        "$ref": "#/components/schemas/PartnerReportMatchId"
+                      },
+                      "idempotencyKey": {
+                        "$ref": "#/components/schemas/PartnerCreateIdempotencyKey"
+                      },
+                      "teams": {
+                        "type": "array",
+                        "minItems": 1,
+                        "description": "One entry per team in the match. Every team carries placement on a single game session lobby, or every team carries wins on a best-of series lobby.",
+                        "items": {
+                          "type": "object",
+                          "required": [
+                            "players"
+                          ],
+                          "oneOf": [
+                            {
+                              "required": [
+                                "placement"
+                              ]
+                            },
+                            {
+                              "required": [
+                                "wins"
+                              ]
+                            }
+                          ],
+                          "properties": {
+                            "players": {
+                              "$ref": "#/components/schemas/PartnerReportPlayers"
+                            },
+                            "placement": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "description": "1 for the best. Each team is placed exactly once."
+                            },
+                            "wins": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "description": "The game sessions this team won in the match, counting its starting wins. Exactly one team's wins equals gamesToWin."
+                            },
+                            "stats": {
+                              "$ref": "#/components/schemas/PartnerStats"
+                            }
+                          }
+                        }
+                      },
+                      "stats": {
+                        "$ref": "#/components/schemas/PartnerStats"
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "title": "progress",
+                    "required": [
+                      "mode",
+                      "matchId",
+                      "idempotencyKey",
+                      "teams"
+                    ],
+                    "properties": {
+                      "mode": {
+                        "type": "string",
+                        "enum": [
+                          "progress"
+                        ]
+                      },
+                      "matchId": {
+                        "$ref": "#/components/schemas/PartnerReportMatchId"
+                      },
+                      "idempotencyKey": {
+                        "$ref": "#/components/schemas/PartnerCreateIdempotencyKey"
+                      },
+                      "teams": {
+                        "type": "array",
+                        "minItems": 1,
+                        "description": "One entry per team in the match, sent after each game session that did not decide the match. Each team's wins is the match's running total after this game session, counting startingWins, never this game session's outcome alone. A drawn or voided game session changes no tally, so it sends nothing.",
+                        "items": {
+                          "type": "object",
+                          "required": [
+                            "players",
+                            "wins"
+                          ],
+                          "properties": {
+                            "players": {
+                              "$ref": "#/components/schemas/PartnerReportPlayers"
+                            },
+                            "wins": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "description": "The team's total game sessions won in this match so far, including its startingWins. Every team is below gamesToWin."
+                            },
+                            "stats": {
+                              "$ref": "#/components/schemas/PartnerStats"
+                            }
+                          }
+                        }
+                      },
+                      "stats": {
+                        "$ref": "#/components/schemas/PartnerStats"
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "title": "termination",
+                    "required": [
+                      "mode",
+                      "matchId",
+                      "idempotencyKey",
+                      "team",
+                      "reason"
+                    ],
+                    "properties": {
+                      "mode": {
+                        "type": "string",
+                        "enum": [
+                          "termination"
+                        ]
+                      },
+                      "matchId": {
+                        "$ref": "#/components/schemas/PartnerReportMatchId"
+                      },
+                      "idempotencyKey": {
+                        "$ref": "#/components/schemas/PartnerCreateIdempotencyKey"
+                      },
+                      "team": {
+                        "type": "object",
+                        "description": "The team whose run in this match ends. It loses the BluMint match, including any game sessions not yet played, whatever the score so far.",
+                        "required": [
+                          "players"
+                        ],
+                        "properties": {
+                          "players": {
+                            "$ref": "#/components/schemas/PartnerRosterPlayers"
+                          }
+                        }
+                      },
+                      "reason": {
+                        "type": "string",
+                        "enum": [
+                          "forfeit",
+                          "fairPlayViolation"
+                        ],
+                        "description": "fairPlayViolation when the team broke your fair-play rules, forfeit otherwise. Both have the same effect, the one the termination row of \"Which report to send when\" states."
+                      },
+                      "note": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256,
+                        "description": "Optional text on what happened, which BluMint stores with the report."
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "title": "abort",
+                    "required": [
+                      "mode",
+                      "matchId",
+                      "idempotencyKey",
+                      "reason",
+                      "retryable"
+                    ],
+                    "properties": {
+                      "mode": {
+                        "type": "string",
+                        "enum": [
+                          "abort"
+                        ]
+                      },
+                      "matchId": {
+                        "$ref": "#/components/schemas/PartnerReportMatchId"
+                      },
+                      "idempotencyKey": {
+                        "$ref": "#/components/schemas/PartnerCreateIdempotencyKey"
+                      },
+                      "reason": {
+                        "type": "string",
+                        "enum": [
+                          "serverFailure",
+                          "insufficientPlayers",
+                          "disputed"
+                        ],
+                        "description": "Why your game ended the match without a result it can stand behind: your server failed, too few players stayed connected for it to go on, or the result is disputed. BluMint stores it, but only retryable decides what happens next."
+                      },
+                      "retryable": {
+                        "type": "boolean",
+                        "description": "Whether a new lobby can succeed. BluMint closes this matchId either way, so a later report for it answers match_closed."
+                      },
+                      "teams": {
+                        "type": "array",
+                        "minItems": 1,
+                        "description": "Each team's running wins, counting its starting wins. Required on an abort of a best-of series lobby, and refused on an abort of a single game session lobby.",
+                        "items": {
+                          "type": "object",
+                          "required": [
+                            "players",
+                            "wins"
+                          ],
+                          "properties": {
+                            "players": {
+                              "$ref": "#/components/schemas/PartnerRosterPlayers"
+                            },
+                            "wins": {
+                              "type": "integer",
+                              "minimum": 0
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "title": "status",
+                    "required": [
+                      "mode",
+                      "matchId",
+                      "idempotencyKey",
+                      "status",
+                      "revision",
+                      "players"
+                    ],
+                    "properties": {
+                      "mode": {
+                        "type": "string",
+                        "enum": [
+                          "status"
+                        ]
+                      },
+                      "matchId": {
+                        "$ref": "#/components/schemas/PartnerReportMatchId"
+                      },
+                      "idempotencyKey": {
+                        "$ref": "#/components/schemas/PartnerCreateIdempotencyKey"
+                      },
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "pending",
+                          "running"
+                        ],
+                        "description": "pending until the first game session starts, running from then on, between game sessions included. A pending report at a higher revision than a running one answers invalid_request, and one at or below the highest revision answers 200 and changes nothing."
+                      },
+                      "revision": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "A positive integer you increase with every status report you send for this matchId. BluMint keeps the report with the highest revision."
+                      },
+                      "players": {
+                        "type": "array",
+                        "minItems": 1,
+                        "description": "Every player of the create, each once, absent ones included. A player the create never seated answers 400 roster_mismatch.",
+                        "items": {
+                          "type": "object",
+                          "required": [
+                            "inGameId",
+                            "status"
+                          ],
+                          "properties": {
+                            "inGameId": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 256
+                            },
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "absent",
+                                "present-not-ready",
+                                "present-ready"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              "examples": {
+                "result": {
+                  "summary": "A decided best-of series",
+                  "value": {
+                    "mode": "result",
+                    "matchId": "4f9c2a7e",
+                    "idempotencyKey": "tA1b2-round-1-match-1",
+                    "teams": [
+                      {
+                        "players": [
+                          {
+                            "inGameId": "alice"
+                          }
+                        ],
+                        "wins": 3
+                      },
+                      {
+                        "players": [
+                          {
+                            "inGameId": "bob"
+                          }
+                        ],
+                        "wins": 1
+                      }
+                    ]
+                  }
+                },
+                "progress": {
+                  "summary": "A first-to-3 match after its third game session, at 2 to 1",
+                  "value": {
+                    "mode": "progress",
+                    "matchId": "4f9c2a7e",
+                    "idempotencyKey": "tA1b2-round-1-match-1",
+                    "teams": [
+                      {
+                        "players": [
+                          {
+                            "inGameId": "alice",
+                            "stats": {
+                              "character": "Ryu"
+                            }
+                          }
+                        ],
+                        "wins": 2
+                      },
+                      {
+                        "players": [
+                          {
+                            "inGameId": "bob",
+                            "stats": {
+                              "character": "Ken"
+                            }
+                          }
+                        ],
+                        "wins": 1
+                      }
+                    ],
+                    "stats": {
+                      "rounds": 3
+                    }
+                  }
+                },
+                "termination": {
+                  "summary": "A player forfeited",
+                  "value": {
+                    "mode": "termination",
+                    "matchId": "4f9c2a7e",
+                    "idempotencyKey": "tA1b2-round-1-match-1",
+                    "team": {
+                      "players": [
+                        {
+                          "inGameId": "bob"
+                        }
+                      ]
+                    },
+                    "reason": "forfeit",
+                    "note": "Conceded the match from the in-game menu."
+                  }
+                },
+                "abort": {
+                  "summary": "The game server failed partway through the match",
+                  "value": {
+                    "mode": "abort",
+                    "matchId": "4f9c2a7e",
+                    "idempotencyKey": "tA1b2-round-1-match-1",
+                    "reason": "serverFailure",
+                    "retryable": true,
+                    "teams": [
+                      {
+                        "players": [
+                          {
+                            "inGameId": "alice"
+                          }
+                        ],
+                        "wins": 2
+                      },
+                      {
+                        "players": [
+                          {
+                            "inGameId": "bob"
+                          }
+                        ],
+                        "wins": 1
+                      }
+                    ]
+                  }
+                },
+                "status": {
+                  "summary": "A game session is running",
+                  "value": {
+                    "mode": "status",
+                    "matchId": "4f9c2a7e",
+                    "idempotencyKey": "tA1b2-round-1-match-1",
+                    "status": "running",
+                    "revision": 3,
+                    "players": [
+                      {
+                        "inGameId": "alice",
+                        "status": "present-ready"
+                      },
+                      {
+                        "inGameId": "bob",
+                        "status": "present-ready"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The report is recorded. stage is complete for a result or termination, live for a progress report, aborted for an abort, and, for a status report, the status of the highest revision BluMint holds. A progress report for game sessions BluMint already recorded, and a status report at or below the highest revision BluMint holds, write nothing and still answer 200.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "stage"
+                  ],
+                  "properties": {
+                    "stage": {
+                      "type": "string",
+                      "enum": [
+                        "complete",
+                        "live",
+                        "aborted",
+                        "pending",
+                        "running"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request, invalid_placements, invalid_wins or roster_mismatch.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "invalid_request",
+                        "invalid_placements",
+                        "invalid_wins",
+                        "roster_mismatch"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The X-Api-Key header is missing or unknown. The body is `{ message }`."
+          },
+          "403": {
+            "description": "The API key is not bound to a game. The body is `{ message }`."
+          },
+          "404": {
+            "description": "unknown_match. No lobby with this matchId was created for your game, and your idempotencyKey identifies no create BluMint is still recording.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "unknown_match"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "The method is not POST. The body is `{ message }`."
+          },
+          "409": {
+            "description": "match_closed or already_scored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "match_closed",
+                        "already_scored"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is over 208896 bytes (204 KiB). The body is plain text, not JSON, and BluMint records nothing, so send a smaller report."
+          },
+          "500": {
+            "description": "A failure on BluMint's side. BluMint is alerted, so retry the report."
+          },
+          "503": {
+            "description": "match_not_ready. The BluMint match cannot take results yet, or BluMint is still recording your answer to the create your idempotencyKey identifies, so retry later.",
+            "headers": {
+              "Retry-After": {
+                "description": "The seconds to wait before retrying, always 30.",
+                "schema": {
+                  "type": "integer",
+                  "example": 30
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "match_not_ready"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tournaments/search": {
+      "get": {
+        "summary": "Lists a game's tournaments.",
+        "tags": [
+          "Tournaments"
+        ],
+        "operationId": "tournaments-search",
+        "description": "Lists the tournaments of the game you name in gameId, one page at a\ntime, filtered and sorted by the query parameters you send.\n\nThe gameId, title and region filter query parameters are each named after the tournament field they match.\nThe title and region filters each accept an array of values, sent comma-joined (region=NA,EU) or as a repeated key (region=NA&region=EU).\nEach value is split on commas and trimmed, so a title containing a comma cannot be matched exactly, and an empty value is refused with a 400.\nThe number of title values times the number of region values may not exceed 30, and a search over that is refused with a 400.\nIf a tournament has the same corresponding field value as any of the array values, it will be included in the response.\nFor example, the query parameter region with values NA and EU will return\nall tournaments with region equal to either 'NA' or 'EU'.\nAny query parameter this page does not list is refused with a 400.\n\nsort names the field to sort by, and order sorts it ascending or\ndescending.\n\nPage through results with the cursor and perPage query parameters.\nTo fetch the next page, pass the `cursor` a response returns, unchanged.\nKeep paging until a response has no `cursor`.\n",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "The field to sort by.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "date",
+                "endDate",
+                "checkInTime",
+                "readyTime"
+              ],
+              "default": "date"
+            }
+          },
+          {
+            "name": "order",
+            "in": "query",
+            "description": "The order of sorting (ascending or descending).",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "default": "desc"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "The cursor the previous page's response returned, passed unchanged. Leave it out for the first page.",
+            "schema": {
+              "type": "string"
+            },
+            "example": "6a6d45ea-d41e-41df-97e2-320783a90f7b"
+          },
+          {
+            "name": "perPage",
+            "in": "query",
+            "description": "How many tournaments one page holds, at most 100. A larger value is refused with a 400.",
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "minimum": 1,
+              "maximum": 100
+            },
+            "example": 10
+          },
+          {
+            "name": "gameId",
+            "in": "query",
+            "description": "The game whose tournaments to list. An empty value is refused with a 400.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "raini-the-lords-of-light"
+          },
+          {
+            "name": "title",
+            "in": "query",
+            "description": "Tournament titles to match, comma-joined or as a repeated key. Each value is split on commas and trimmed, an empty value is refused with a 400, and the title values times the region values may not exceed 30.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "style": "form",
+            "explode": false,
+            "example": [
+              "Deck Boss Version 3"
+            ]
+          },
+          {
+            "name": "region",
+            "in": "query",
+            "description": "Tournament regions to match, comma-joined or as a repeated key. Each value is split on commas and trimmed, an empty value is refused with a 400, and the title values times the region values may not exceed 30.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "style": "form",
+            "explode": false,
+            "example": [
+              "Global"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of tournaments for the requested game.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "items"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "description": "The matching tournaments, at most `perPage` of them. Each item is a full tournament record and can carry fields beyond the documented schema, which you must not rely on. Date fields are UTC ISO 8601 strings with a `Z` suffix and millisecond precision, for example `2023-05-04T16:00:00.000Z`.",
+                      "items": {
+                        "$ref": "#/components/schemas/Tournament"
+                      }
+                    },
+                    "cursor": {
+                      "type": "string",
+                      "description": "Pass the returned `cursor` unchanged to fetch the next page. Keep paging until a response has no `cursor`. A page holding fewer than `perPage` items is the last page and has no `cursor`.",
+                      "example": "6a6d45ea-d41e-41df-97e2-320783a90f7b"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A query parameter failed validation. The message names the failed check, not the parameter.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "message"
+                  ],
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "missing-game-id": {
+                    "value": {
+                      "message": "Invalid input: missing required property"
+                    }
+                  },
+                  "unknown-parameter": {
+                    "value": {
+                      "message": "Invalid input: unknown property"
+                    }
+                  },
+                  "empty-filter-value": {
+                    "value": {
+                      "message": "Invalid input: expected non-empty values"
+                    }
+                  },
+                  "too-many-filter-values": {
+                    "value": {
+                      "message": "Invalid input: too many filter values"
+                    }
+                  },
+                  "bad-sort": {
+                    "value": {
+                      "message": "Invalid input: expected enum value"
+                    }
+                  },
+                  "bad-per-page": {
+                    "value": {
+                      "message": "Invalid input: expected positive integer"
+                    }
+                  },
+                  "per-page-too-large": {
+                    "value": {
+                      "message": "Invalid input: page size exceeds maximum"
+                    }
+                  },
+                  "malformed-cursor": {
+                    "value": {
+                      "message": "Invalid input: expected document id"
+                    }
+                  },
+                  "unknown-cursor": {
+                    "value": {
+                      "message": "Invalid input: cursor names no document in this ordering"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The API key is missing or invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "message"
+                  ],
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "Unauthorized - Invalid API key"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "The request used a method other than GET.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "Method Not Allowed - Should be GET."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "Internal Server Error"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "This filter and sort combination is not supported yet.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "The query requires an index. The request has been logged for the BluMint team to create the index. This may take as little as a 10mins or as long as 6hrs."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tournaments/setLookupPlayer": {
+      "post": {
+        "operationId": "setLookupPlayer",
+        "summary": "Registers your player lookup callback URL.",
+        "description": "Registers the https URL BluMint calls to get your player id for a\nBluMint user from an account they linked. BluMint calls it only for a\ngame whose player ids it gets from this URL, rather than identifying\nplayers by an account they linked themselves: when the user\nregisters for one of your game's tournaments, and again before every\ncreate, once for each player in the match, so each create carries the\nid you answered then. BluMint never calls it for a spectator, and\nnever for a player who has linked none of the accounts you chose in\nthe setup form: it asks that player to link one instead.\nRegister this URL before your game's first tournament opens: a player\ncan register for one of your game's tournaments only after your\nlookup finds them, so until this URL is registered no one can.\nBluMint stops waiting after 3 seconds for a lookup made when a player\nregisters, and after 10 seconds for each try before a create. Use and\nkeep the ids BluMint sends and the player ids you answer only to put\nplayers into matches in your game's BluMint tournaments and to let\nthe spectators who chose to watch do so. Share them with no one else,\nand keep them secure. Registering again replaces the previous URL. The URL's\nhost must resolve only to public addresses, an IP-address host must\nbe a public IPv4 address, and BluMint follows no redirects, so the\nURL must answer directly.\n\nWhich answer to send when BluMint calls your URL:\n\n| Situation | Status | What happens next |\n| --- | --- | --- |\n| You know the player | `200` | At registration, the player can register. Before a create, the create identifies the player by the id you answered. |\n| You don't know the player | `200` | At registration, the player is asked to connect their account in your game, then check again. Before a create, BluMint asks the player to connect their account and retries under the same key every 60 seconds. A player still unlinked when the tournament's hold length runs out is disqualified. |\n| You are down or overloaded | `502`, `503`, `504`, `408`, `429`, or no answer | At registration, the player is told you aren't responding and to try again in a minute. Before a create, BluMint tries the create again under the same key, as it does when your create URL is down, then the host takes the match and starts it manually. |\n| BluMint's request breaks the rules in this guide | `400` | At registration, the player can't register. Before a create, the host takes the match and starts it manually. |\n| Your server failed on this request | `500` | At registration, the player is told you aren't responding and to try again in a minute. Before a create, the host takes the match and starts it manually. |\n\nFor what BluMint sends to your URL and how to answer it, see [Player lookup](/guide/player-lookup).",
+        "tags": [
+          "Tournaments"
+        ],
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "lookupPlayerUrl"
+                ],
+                "properties": {
+                  "lookupPlayerUrl": {
+                    "type": "string",
+                    "format": "uri",
+                    "description": "The https URL of your player lookup endpoint.",
+                    "example": "https://www.yourgame.com/api/player/lookup"
+                  },
+                  "authentication": {
+                    "description": "The secret BluMint sends when it calls your lookup endpoint. When omitted, any secret registered earlier stays in place.",
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/CallbackAuthentication"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "callbacks": {
+          "lookupPlayer": {
+            "{$request.body#/lookupPlayerUrl}": {
+              "post": {
+                "description": "Answer quickly. BluMint stops waiting after 3 seconds for a\nlookup sent while a player registers, and sends it only once.\nBefore a create, BluMint waits up to 10 seconds for each\nlookup. A timeout counts as no answer, the outage row of the\ndecision table above.\n\nBluMint reads only the status of a failed lookup, so the body\nof a 400 or 500 can be anything. Any other answer counts like\nthe 400 row, a 200 whose body breaks the rules below\nincluded, except another 5xx, which counts like the 500 row.\nWhen you don't know the\nplayer, answer 200 with [] or [null] for that key, or leave\nthe key out. All three mean the same thing. Never answer 404:\nBluMint counts it like the 400 row. When your server is down\nonly for a while, answer 503 or another status on the outage\nrow. A 400, a 500, or any answer the table does not list is\nfinal.\n\nBluMint looks up every player of a match just before its\ncreate, and sends one create per match of a round at the same\nmoment, so a 256-team single-elimination tournament with one\nplayer per team sends about 256 lookups together. BluMint\nsets no limit on how many it sends at once, so accept the\nburst rather than answering 429.",
+                "requestBody": {
+                  "description": "One BluMint user per call. Each key is an authentication method you chose in the setup form that the user has linked on BluMint and that BluMint looks players up by (today discord, epic, twitch or lichess), and its array holds exactly one id, the user's id on that provider. A user holds at most one account per provider. With your secret in the body, the body also carries that field.",
+                  "required": true,
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "oneOf": [
+                            {
+                              "type": "array",
+                              "minItems": 1,
+                              "maxItems": 1,
+                              "items": {
+                                "type": "string"
+                              },
+                              "description": "An authentication method key, holding the user's id on that provider."
+                            },
+                            {
+                              "type": "string",
+                              "description": "Your secret, under the body key you registered, when its location is body."
+                            }
+                          ]
+                        }
+                      },
+                      "example": {
+                        "discord": [
+                          "274220342558756145"
+                        ]
+                      }
+                    }
+                  }
+                },
+                "responses": {
+                  "200": {
+                    "description": "For a player you know, answer each key with a one-entry array holding your player id for that account, a non-empty string of at most 256 printable characters. For a miss, answer [] or [null], or leave the key out. Two keys must never identify different players, and an array never holds more than one entry; either fails the call. Keys BluMint did not send are ignored. A miss is never a 404.",
+                    "content": {
+                      "application/json": {
+                        "schema": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "array",
+                            "maxItems": 1,
+                            "items": {
+                              "type": "string",
+                              "nullable": true,
+                              "minLength": 1,
+                              "maxLength": 256,
+                              "pattern": "\\S"
+                            }
+                          }
+                        },
+                        "example": {
+                          "discord": [
+                            "emb1_example"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The lookup callback URL is registered.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "message"
+                  ],
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "Success - Player lookup callback URL set successfully."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/CallbackRegistrationRefused"
+          },
+          "401": {
+            "$ref": "#/components/responses/CallbackRegistrationUnauthenticated"
+          },
+          "404": {
+            "$ref": "#/components/responses/CallbackRegistrationGameNotFound"
+          },
+          "405": {
+            "$ref": "#/components/responses/CallbackRegistrationMethodNotAllowed"
+          }
+        }
+      }
+    }
+  },
+  "tags": []
+}

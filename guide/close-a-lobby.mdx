@@ -1,0 +1,40 @@
+---
+title: "Close a lobby"
+description: "When BluMint asks you to close a lobby, how it identifies the lobby, and how to answer."
+---
+
+import CloseBody from "/snippets/contract/examples/close.body.mdx";
+import CloseReasons from "/snippets/contract/close-reasons.mdx";
+import CloseAnswers from "/snippets/generated/answers/close.mdx";
+
+## Close a lobby {#close-a-match}
+
+When BluMint no longer needs a lobby you created, it asks you to close it. It POSTs the `closeMatchUrl` you register through `/api/tournaments/match/setClose`, and waits for your confirmed close before it creates a lobby for any player in the closed one, so no player is ever in two of your lobbies at once while BluMint is still sending its close. If you register no close URL, BluMint sends you no closes and does not wait, so a player can arrive in a new lobby while an earlier one is still open on your side, and you expire such lobbies yourself.
+
+```http
+POST <your closeMatchUrl>
+Content-Type: application/json
+Idempotency-Key: <a key BluMint chooses>
+<your secret, as you registered it>
+```
+
+BluMint identifies the lobby by the `Idempotency-Key` of the create that made it, never by your `matchId`. The key can belong to a create whose answer never reached BluMint, or to one that never reached you:
+
+<CloseBody />
+
+- Treat the close's `Idempotency-Key` header as opaque. It is the same on every delivery of one close and holds only ASCII letters, digits and `-`, but it can be longer than a create's key.
+- Close the lobby you made under the key in the body. If you made none, record the key as closed and answer `200`. A close takes the same per-key reservation as a create ([Idempotency](/guide/create-a-lobby#idempotency)): when a create under the key is still building, record the key closed and answer `200`, and that create re-reads the mark before it commits its lobby, tears down what it built and answers `409 idempotency_key_reused`. A create under that key that was already on its way can still reach you after the close, so refuse any later create under the key with `409 idempotency_key_reused`: a lobby made from it would have no players and might never be closed.
+- Keep each create's key for as long as you keep the lobby it made, so a close always finds it ([Idempotency](/guide/create-a-lobby#idempotency)). A close naming a key you no longer keep, because its lobby ended long ago, answers `200`, since that lobby already ended.
+- Answer each close within {/* contract-constant MATCH_CLOSE_TIMEOUT_MS */}10 seconds. A close with no answer by then is an outage answer, and BluMint tries again {/* contract-constant PARTNER_CLOSE_REDIAL_INTERVAL_MS */}60 seconds later while the players' next match waits. An outage answer's `Retry-After` works as it does on a create: BluMint waits at least that long, up to {/* contract-constant PARTNER_RETRY_AFTER_MAX_MS */}5 minutes, and a wait reaching past the re-send window is cut short, so BluMint still sends one last close.
+
+Close the lobby the same way, and answer `200`, whatever the reason, including one you do not recognize. `reason` only tells you why, for your logs:
+
+<CloseReasons />
+
+### Which answer to send when {#close-answers}
+
+<CloseAnswers />
+
+The table lists every answer BluMint acts on. A key you hold nothing under is the `200` row, never a `404`: whether you made no lobby under it or the lobby already ended, nothing on your side still holds its players. When your server is down only for a while, answer `503` or another status on the outage row, so BluMint sends the close again. BluMint reads any answer the table does not list, a `404` or a `500` included, as a failed close, since it can't tell whether the lobby is still open with players in it, and every match waiting on it goes to the host.
+
+Once a close's matches have gone to the host, BluMint never sends that close again: treat the lobby as closed and expire it, so a later create identifying its players never meets `player_busy`.
