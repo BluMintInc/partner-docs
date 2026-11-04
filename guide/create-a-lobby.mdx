@@ -74,7 +74,7 @@ BluMint tells every player the create identifies in `teams` that their match is 
 <Frame caption="The push notification your players get when you answer with a join link">
   <img
     src="/images/shared/match-ready-push.png"
-    alt="iPhone lock screen showing BluMint's Your lobby's open notification: your Ember match with georgebush for the Friday Night Cup event is ready"
+    alt="iPhone lock screen showing BluMint's Your lobby's open notification: your Ember game with georgebush for the Friday Night Cup event is ready"
     width="320"
   />
 </Frame>
@@ -116,7 +116,7 @@ Anyone viewing the tournament can still read that link, so it must only let its 
 
 While BluMint waits on your server or on a player, it holds the match and retries every {/* contract-constant PARTNER_CREATE_HOLD_RETRY_MS */}60 seconds for the tournament's hold length, which the host sets between {/* contract-constant MIN_PARTNER_CREATE_HOLD_MINUTES */}5 and {/* contract-constant MAX_PARTNER_CREATE_HOLD_MINUTES */}30 minutes ({/* contract-constant DEFAULT_PARTNER_CREATE_HOLD_MINUTES */}10 by default). What happens when the hold runs out depends on what BluMint was waiting for:
 
-- **A player**, such as one you answered `player_busy` or `player_unlinked` for: that player is disqualified, since fixing it was theirs to do.
+- **A player**, such as one you answered `player_busy` or `player_unlinked` for: that player is disqualified, since fixing it was theirs to do, unless that answer's row below says the host takes the match.
 - **Your server**, after outage answers: nobody is disqualified, and the host takes the match and sets it up manually.
 
 While BluMint waits on your server, it tells the match's players so:
@@ -136,7 +136,7 @@ An outage answer is one on the down-or-overloaded row below, which includes no a
 `match_unsupported`, `invalid_request`, `idempotency_key_reused`, a `500` and any answer this table does not list are final: BluMint stops, and the host starts the match manually. BluMint reads a `500` as your code failing on this request, which sending it again would only repeat. When a problem will clear on its own, such as a deploy, a restart or a full queue, answer `503`, not `500`.
 
 - Send `player_unlinked` for any player you can't match to one of yours, listing in `players` every id from the request you don't recognize. When you identify players by one kind of linked account, the player can replace that account with another in the app, and the next retry identifies them by the new one.
-- With a close URL registered, BluMint waits for your `200` to each lobby's close before it asks you for a new lobby for any of its players, so a create never identifies a player who is still in one of your lobbies ([Close a lobby](/guide/close-a-lobby)). If one arrives anyway, for example because you registered no close URL or because of a close BluMint gave up on, answer `423 player_busy`, listing in `players` every id from the request that another of your lobbies holds. Never answer a busy player with a `5xx`, which BluMint reads as your server being down.
+- With a close URL registered, BluMint waits for your `200` to each lobby's close before it asks you for a new lobby for any of its players, so a lobby it closed never holds a player a create identifies ([Close a lobby](/guide/close-a-lobby)). A create can still identify a player who is busy elsewhere in your game, such as in another tournament's lobby or a game they started outside BluMint. A lobby can also still hold one because you registered no close URL or because BluMint gave up on its close. Answer each such create with `423 player_busy`, listing in `players` every id from the request that is busy elsewhere in your game. Never answer a busy player with a `5xx`, which BluMint reads as your server being down.
 - Treat a refused create as if it never happened. When you answer `player_unlinked` or `player_busy`, create nothing and don't mark the `Idempotency-Key` as used. Handle each retry under that key, possibly with corrected player ids, like a first request.
 
 A refusal carries only `code` and, where the table names it, `players`. BluMint ignores any other text you add:
@@ -155,10 +155,10 @@ BluMint then tells each named player what to do:
   />
 </Frame>
 
-<Frame caption="The push notification a player gets while another of your lobbies holds them">
+<Frame caption="The push notification a player gets while they are busy elsewhere in your game">
   <img
     src="/images/create-a-lobby/player-busy-push.png"
-    alt="iPhone lock screen showing BluMint's Finish your other match notification, asking the player to finish or leave their other Ember match"
+    alt="iPhone lock screen showing BluMint's Leave your Ember game notification, asking the player to end every Ember game or lobby they are in"
     width="320"
   />
 </Frame>

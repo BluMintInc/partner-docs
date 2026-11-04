@@ -37,4 +37,4 @@ Close the lobby the same way, and answer `200`, whatever the reason, including o
 
 The table lists every answer BluMint acts on. A key you hold nothing under is the `200` row, never a `404`: whether you made no lobby under it or the lobby already ended, nothing on your side still holds its players. When your server is down only for a while, answer `503` or another status on the outage row, so BluMint sends the close again. BluMint reads any answer the table does not list, a `404` or a `500` included, as a failed close, since it can't tell whether the lobby is still open with players in it, and every match waiting on it goes to the host.
 
-Once a close's matches have gone to the host, BluMint never sends that close again: treat the lobby as closed and expire it, so a later create identifying its players never meets `player_busy`.
+Once a close's matches have gone to the host, BluMint never sends that close again: treat the lobby as closed and expire it, so it never holds a player a later create identifies.
