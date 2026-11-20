@@ -216,16 +216,16 @@
           },
           "title": {
             "type": "string",
-            "example": "Deck Boss Version 3"
+            "example": "Friday Night Cup"
           },
           "gameTitle": {
             "type": "string",
-            "example": "Raini:The Lords of Light"
+            "example": "Ember"
           },
           "gameId": {
             "description": "kebab-case title of the tournament's parent game",
             "type": "string",
-            "example": "raini-the-lords-of-light"
+            "example": "ember"
           },
           "endpoint": {
             "type": "string",
@@ -245,7 +245,7 @@
           "imgUrl": {
             "type": "string",
             "nullable": true,
-            "example": "https://firebasestorage.googleapis.com/v0/b/blumint-development.appspot.com/o/Game%2Fraini-the-lords-of-light%2FRTLOLTourneyThumbnail-128x128.png?alt=media&token=a5b33dcd-7cef-4db1-a36a-5878a2921ddf"
+            "example": "https://example.com/friday-night-cup-128x128.png"
           },
           "blurb": {
             "$ref": "#/components/schemas/Blurb"
@@ -291,11 +291,11 @@
         "properties": {
           "title": {
             "type": "string",
-            "example": "Raini:The Lords of Light Tournament"
+            "example": "Friday Night Cup"
           },
           "description": {
             "type": "string",
-            "example": "Join us for an exciting single-elimination tournament with a $50 prize pool!"
+            "example": "A single-elimination tournament, open to every player."
           },
           "rules": {
             "type": "array",
@@ -315,17 +315,17 @@
         "properties": {
           "name": {
             "type": "string",
-            "example": "SupraOracles"
+            "example": "Acme"
           },
           "imgUrl": {
             "type": "string",
             "nullable": true,
-            "example": "https://firebasestorage.googleapis.com/v0/b/blumint-development.appspot.com/o/Game%2Fbig-time%2FSupraOraclesLogo.png?alt=media&token=2403e048-af79-45e8-8da0-341ae5a5d21c"
+            "example": "https://example.com/sponsor-logo.png"
           },
           "redirectUrl": {
             "type": "string",
             "nullable": true,
-            "example": "https://supraoracles.com/"
+            "example": "https://example.com/"
           },
           "width": {
             "type": "integer",
@@ -1617,7 +1617,7 @@
             "schema": {
               "type": "string"
             },
-            "example": "raini-the-lords-of-light"
+            "example": "ember"
           },
           {
             "name": "title",
@@ -1632,7 +1632,7 @@
             "style": "form",
             "explode": false,
             "example": [
-              "Deck Boss Version 3"
+              "Friday Night Cup"
             ]
           },
           {
