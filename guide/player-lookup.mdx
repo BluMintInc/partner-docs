@@ -11,7 +11,7 @@ import LookupAnswers from "/snippets/generated/answers/lookup.mdx";
 
 If BluMint identifies your players by your own player ids, your lookup URL is required. Register it before your game's first tournament opens: a player can register for one of your game's tournaments only after your lookup finds them, so until the URL is registered no one can. An integration identifies its players one way only, so once you choose your own player ids, every create identifies every player by the id your lookup answered, never by a linked account. The full lookup schemas are in the [API reference](/api-reference/introduction), in the callbacks of the `setLookupPlayer` endpoint.
 
-BluMint sends one lookup per player. The body has one key for each authentication method you chose in the setup form that the player has linked on BluMint and that BluMint looks players up by (today `discord`, `epic`, `twitch` or `lichess`, with more as BluMint adds them), holding that account's id, plus your secret if you send it in the body. BluMint doesn't call your lookup for a player who has linked none of them, and asks that player to link one instead. It never calls your lookup for a spectator:
+BluMint sends one lookup per player. The body has one key for each authentication method you chose in the setup form that the player has linked on BluMint and that BluMint looks players up by (today {/* contract-list CUSTOM_SIGN_IN_METHODS */}`discord`, `epic`, `twitch` or `lichess`, with more as BluMint adds them), holding that account's id, plus your secret if you send it in the body. BluMint doesn't call your lookup for a player who has linked none of them, and asks that player to link one instead. It never calls your lookup for a spectator:
 
 <LookupRequest />
 
