@@ -68,10 +68,11 @@ html.dark a[data-component-name="primary-header-button"] {
 /*
  * A heading's permalink sits 40px left of the heading, outside the page at
  * phone and tablet widths, where it can only take keyboard focus off screen.
- * It shows on hover alone, which those widths do not have.
+ * It shows on hover alone, which those widths do not have. A prefix match,
+ * since the theme labels some permalinks "Navigate to header: <heading>".
  */
 @media (max-width: 1023px) {
-  #content-area a[aria-label="Navigate to header"] {
+  #content-area a[aria-label^="Navigate to header"] {
     display: none !important;
   }
 }
